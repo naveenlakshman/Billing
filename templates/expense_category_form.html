@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Add Expense Category</h2>
+
+<div class="card">
+  <form method="post">
+    <div class="form-group">
+      <label>Category Name</label>
+      <input type="text" name="category_name" required>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Save Category</button>
+    <a href="{{ url_for('expense_categories') }}" class="btn">Cancel</a>
+  </form>
+</div>
+{% endblock %}

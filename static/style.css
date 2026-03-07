@@ -494,3 +494,153 @@ body {
 .search-form .form-group {
     min-width: 180px;
 }
+
+.dashboard-chart-card {
+    padding: 20px;
+}
+
+.dashboard-chart-layout {
+    display: grid;
+    grid-template-columns: 3fr 1fr;
+    gap: 20px;
+    align-items: stretch;
+}
+
+.dashboard-chart-left {
+    min-height: 420px;
+}
+
+.dashboard-chart-left canvas {
+    width: 100% !important;
+    height: 360px !important;
+}
+
+.dashboard-chart-right {
+    border-left: 1px solid #ddd;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 24px;
+}
+
+.dashboard-total-block h4 {
+    margin-bottom: 8px;
+    font-size: 18px;
+}
+
+.dashboard-total-value {
+    font-size: 30px;
+    font-weight: bold;
+    margin: 0;
+}
+
+.collection-text {
+    color: #2563eb;
+}
+
+.expense-text {
+    color: #dc2626;
+}
+
+.net-positive {
+    color: #16a34a;
+}
+
+.net-negative {
+    color: #dc2626;
+}
+
+.dashboard-date-range {
+    margin-top: 10px;
+    color: #666;
+}
+
+@media (max-width: 1000px) {
+    .dashboard-chart-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-chart-right {
+        border-left: none;
+        border-top: 1px solid #ddd;
+        padding-left: 0;
+        padding-top: 20px;
+    }
+}
+
+.sales-text {
+    color: #2563eb;
+}
+
+.receipt-text {
+    color: #16a34a;
+}
+
+.expense-text {
+    color: #dc2626;
+}
+
+.receivable-card {
+    padding: 20px;
+}
+
+.receivable-total {
+    font-size: 30px;
+    font-weight: bold;
+    margin: 10px 0 16px;
+}
+
+.receivable-bar {
+    width: 100%;
+    height: 16px;
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    margin-bottom: 20px;
+    background: #eee;
+}
+
+.seg-current {
+    background: #3b82f6;
+}
+
+.seg-1-15 {
+    background: #facc15;
+}
+
+.seg-16-30 {
+    background: #fbbf24;
+}
+
+.seg-31-45 {
+    background: #fb923c;
+}
+
+.seg-45plus {
+    background: #f97316;
+}
+
+.receivable-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+}
+
+.receivable-grid small {
+    display: block;
+    color: #666;
+    margin-bottom: 6px;
+}
+
+.receivable-grid p {
+    margin: 0;
+    font-size: 22px;
+    font-weight: bold;
+}
+
+@media (max-width: 900px) {
+    .receivable-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}

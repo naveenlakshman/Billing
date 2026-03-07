@@ -11,9 +11,18 @@ def get_conn():
     return conn
 
 
+def add_column_if_not_exists(cur, table_name, column_name, column_def):
+    cur.execute(f"PRAGMA table_info({table_name})")
+    columns = [row["name"] for row in cur.fetchall()]
+    if column_name not in columns:
+        cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+
+
 def init_db():
     conn = get_conn()
     cur = conn.cursor()
+
+    now = datetime.now().isoformat(timespec="seconds")
 
     # ---------- USERS ----------
     cur.execute("""
@@ -153,17 +162,102 @@ def init_db():
         )
     """)
 
-    conn.commit()
+    # ---------- BRANCHES ----------
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS branches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            branch_name TEXT NOT NULL UNIQUE,
+            branch_code TEXT NOT NULL UNIQUE,
+            address TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        )
+    """)
+        # ---------- EXPENSE CATEGORIES ----------
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS expense_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category_name TEXT NOT NULL UNIQUE,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        )
+    """)
 
-    # Default admin user
+    # ---------- EXPENSES ----------
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            expense_date TEXT NOT NULL,
+            branch_id INTEGER NOT NULL,
+            category_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            amount REAL NOT NULL DEFAULT 0,
+            payment_mode TEXT NOT NULL
+                CHECK(payment_mode IN ('cash', 'upi', 'bank_transfer', 'card')),
+            reference_no TEXT,
+            notes TEXT,
+            created_by INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            FOREIGN KEY (branch_id) REFERENCES branches(id),
+            FOREIGN KEY (category_id) REFERENCES expense_categories(id),
+            FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+    """)
+
+    # ---------- BRANCH MIGRATIONS ----------
+    add_column_if_not_exists(cur, "users", "branch_id", "INTEGER")
+    add_column_if_not_exists(cur, "users", "can_view_all_branches", "INTEGER NOT NULL DEFAULT 1")
+
+    add_column_if_not_exists(cur, "students", "branch_id", "INTEGER")
+    add_column_if_not_exists(cur, "invoices", "branch_id", "INTEGER")
+    add_column_if_not_exists(cur, "payments", "branch_id", "INTEGER")
+
+    # ---------- DEFAULT BRANCHES ----------
+    cur.execute("SELECT id FROM branches WHERE branch_code = ?", ("HO",))
+    ho_branch = cur.fetchone()
+    if not ho_branch:
+        cur.execute("""
+            INSERT INTO branches (branch_name, branch_code, address, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            "Global IT Education Head Office",
+            "HO",
+            "T G Extension, Opposite to B M Lab, Hoskote",
+            1,
+            now
+        ))
+
+    cur.execute("SELECT id FROM branches WHERE branch_code = ?", ("HB",))
+    hb_branch = cur.fetchone()
+    if not hb_branch:
+        cur.execute("""
+            INSERT INTO branches (branch_name, branch_code, address, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            "Global IT Education – Hoskote Branch",
+            "HB",
+            "College Road, Near Ayyappa Swamy Temple, Hoskote",
+            1,
+            now
+        ))
+
+    # Get Head Office ID for default backfill
+    cur.execute("SELECT id FROM branches WHERE branch_code = ?", ("HO",))
+    head_office = cur.fetchone()
+    head_office_id = head_office["id"] if head_office else 1
+
+    # ---------- DEFAULT ADMIN USER ----------
     cur.execute("SELECT id FROM users WHERE username = ?", ("admin",))
     existing_admin = cur.fetchone()
 
     if not existing_admin:
-        now = datetime.now().isoformat(timespec="seconds")
         cur.execute("""
-            INSERT INTO users (full_name, username, password_hash, role, phone, is_active, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (
+                full_name, username, password_hash, role, phone,
+                is_active, created_at, updated_at, branch_id, can_view_all_branches
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             "Administrator",
             "admin",
@@ -172,8 +266,40 @@ def init_db():
             "",
             1,
             now,
-            now
+            now,
+            head_office_id,
+            1
         ))
-        conn.commit()
 
+    # ---------- BACKFILL OLD RECORDS ----------
+    cur.execute("UPDATE users SET branch_id = ? WHERE branch_id IS NULL", (head_office_id,))
+    cur.execute("UPDATE users SET can_view_all_branches = 1 WHERE can_view_all_branches IS NULL")
+
+    cur.execute("UPDATE students SET branch_id = ? WHERE branch_id IS NULL", (head_office_id,))
+    cur.execute("UPDATE invoices SET branch_id = ? WHERE branch_id IS NULL", (head_office_id,))
+    cur.execute("UPDATE payments SET branch_id = ? WHERE branch_id IS NULL", (head_office_id,))
+
+    default_categories = [
+        "Rent",
+        "Salary",
+        "Electricity",
+        "Internet",
+        "Marketing",
+        "Stationery",
+        "Travel",
+        "Maintenance",
+        "Tea/Snacks",
+        "Software/Tools",
+        "Miscellaneous"
+    ]
+
+    for category_name in default_categories:
+        cur.execute("SELECT id FROM expense_categories WHERE category_name = ?", (category_name,))
+        if not cur.fetchone():
+            cur.execute("""
+                INSERT INTO expense_categories (category_name, is_active, created_at)
+                VALUES (?, ?, ?)
+            """, (category_name, 1, now))
+
+    conn.commit()
     conn.close()

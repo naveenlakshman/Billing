@@ -3,15 +3,39 @@
 {% block content %}
 <h2>Dashboard</h2>
 
+<div class="card">
+  <form method="get" class="search-form">
+    <div class="form-group">
+      <label>Branch</label>
+      <select name="branch_id">
+        <option value="">All Branches</option>
+        {% for b in branches %}
+        <option value="{{ b.id }}" {% if branch_id == (b.id|string) %}selected{% endif %}>
+          {{ b.branch_name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Period</label>
+      <select name="period">
+        <option value="this_fy" {% if period == "this_fy" %}selected{% endif %}>This Fiscal Year</option>
+        <option value="last_fy" {% if period == "last_fy" %}selected{% endif %}>Previous Fiscal Year</option>
+        <option value="last_12_months" {% if period == "last_12_months" %}selected{% endif %}>Last 12 Months</option>
+      </select>
+    </div>
+
+    <div class="form-group" style="align-self:end;">
+      <button type="submit" class="btn btn-primary">Apply</button>
+    </div>
+  </form>
+</div>
+
 <div class="grid">
   <div class="card stat-card">
     <h3>Total Students</h3>
     <p>{{ total_students }}</p>
-  </div>
-
-  <div class="card stat-card">
-    <h3>Total Courses</h3>
-    <p>{{ total_courses }}</p>
   </div>
 
   <div class="card stat-card">
@@ -20,14 +44,133 @@
   </div>
 
   <div class="card stat-card">
-    <h3>Total Collection</h3>
-    <p>₹ {{ "%.2f"|format(total_collection or 0) }}</p>
+    <h3>Total Sales</h3>
+    <p>₹ {{ "%.2f"|format(total_sales or 0) }}</p>
+  </div>
+
+  <div class="card stat-card">
+    <h3>Total Receipts</h3>
+    <p>₹ {{ "%.2f"|format(total_receipts or 0) }}</p>
   </div>
 </div>
 
-<div class="card">
-  <h3>Welcome</h3>
-  <p>This is the starting dashboard for your billing software.</p>
-  <p>Next, we will build Students and Courses modules.</p>
+<div class="card receivable-card">
+  <h3>Total Receivables</h3>
+  <p class="receivable-total">₹ {{ "%.2f"|format(total_receivables or 0) }}</p>
+
+  {% set total = total_receivables if total_receivables > 0 else 1 %}
+  {% set current_pct = (current_amount / total * 100) %}
+  {% set b1_pct = (bucket_1_15 / total * 100) %}
+  {% set b2_pct = (bucket_16_30 / total * 100) %}
+  {% set b3_pct = (bucket_31_45 / total * 100) %}
+  {% set b4_pct = (bucket_above_45 / total * 100) %}
+
+  <div class="receivable-bar">
+    <div class="seg-current" style="width: {{ current_pct }}%;"></div>
+    <div class="seg-1-15" style="width: {{ b1_pct }}%;"></div>
+    <div class="seg-16-30" style="width: {{ b2_pct }}%;"></div>
+    <div class="seg-31-45" style="width: {{ b3_pct }}%;"></div>
+    <div class="seg-45plus" style="width: {{ b4_pct }}%;"></div>
+  </div>
+
+  <div class="receivable-grid">
+    <div>
+      <small>CURRENT</small>
+      <p>₹ {{ "%.2f"|format(current_amount or 0) }}</p>
+    </div>
+    <div>
+      <small>1-15 Days</small>
+      <p>₹ {{ "%.2f"|format(bucket_1_15 or 0) }}</p>
+    </div>
+    <div>
+      <small>16-30 Days</small>
+      <p>₹ {{ "%.2f"|format(bucket_16_30 or 0) }}</p>
+    </div>
+    <div>
+      <small>31-45 Days</small>
+      <p>₹ {{ "%.2f"|format(bucket_31_45 or 0) }}</p>
+    </div>
+    <div>
+      <small>Above 45 Days</small>
+      <p>₹ {{ "%.2f"|format(bucket_above_45 or 0) }}</p>
+    </div>
+  </div>
 </div>
+
+<div class="card dashboard-chart-card">
+  <div class="dashboard-chart-layout">
+    <div class="dashboard-chart-left">
+      <h3>Sales, Receipts and Expenses</h3>
+      <canvas id="dashboardChart"></canvas>
+    </div>
+
+    <div class="dashboard-chart-right">
+      <div class="dashboard-total-block">
+        <h4>Total Sales</h4>
+        <p class="dashboard-total-value sales-text">₹ {{ "%.2f"|format(total_sales or 0) }}</p>
+      </div>
+
+      <div class="dashboard-total-block">
+        <h4>Total Receipts</h4>
+        <p class="dashboard-total-value receipt-text">₹ {{ "%.2f"|format(total_receipts or 0) }}</p>
+      </div>
+
+      <div class="dashboard-total-block">
+        <h4>Total Expenses</h4>
+        <p class="dashboard-total-value expense-text">₹ {{ "%.2f"|format(total_expenses or 0) }}</p>
+      </div>
+
+      <div class="dashboard-total-block">
+        <h4>Net Position</h4>
+        <p class="dashboard-total-value {% if net_position >= 0 %}net-positive{% else %}net-negative{% endif %}">
+          ₹ {{ "%.2f"|format(net_position or 0) }}
+        </p>
+      </div>
+
+      <div class="dashboard-date-range">
+        <small>{{ start_date }} to {{ end_date }}</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const ctx = document.getElementById('dashboardChart');
+
+new Chart(ctx, {
+    type: 'bar',
+    data: {
+        labels: {{ month_labels|tojson }},
+        datasets: [
+            {
+                label: 'Sales',
+                data: {{ sales_data|tojson }}
+            },
+            {
+                label: 'Receipts',
+                data: {{ receipts_data|tojson }}
+            },
+            {
+                label: 'Expenses',
+                data: {{ expenses_data|tojson }}
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'top'
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true
+            }
+        }
+    }
+});
+</script>
 {% endblock %}

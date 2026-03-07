@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h2>Reports - Date-wise Collection</h2>
+<h2>Reports - Expenses</h2>
 
 <div class="card">
   <form method="get" class="search-form">
@@ -35,13 +35,13 @@
 
 <div class="grid">
   <div class="card stat-card">
-    <h3>Total Collection</h3>
-    <p>₹ {{ "%.2f"|format(total_collection or 0) }}</p>
+    <h3>Total Expense</h3>
+    <p>₹ {{ "%.2f"|format(total_expense or 0) }}</p>
   </div>
 
   <div class="card stat-card">
-    <h3>Total Payments</h3>
-    <p>{{ total_payments }}</p>
+    <h3>Total Entries</h3>
+    <p>{{ total_entries }}</p>
   </div>
 
   <div class="card">
@@ -77,64 +77,59 @@
   </div>
 </div>
 
+<div class="grid">
+  <div class="card">
+    <h3>Category-wise Summary</h3>
+    <table border="1" width="100%" cellpadding="10" class="billing-table">
+      <tr>
+        <th>Category</th>
+        <th>Amount</th>
+      </tr>
+      {% for c in category_rows %}
+      <tr>
+        <td>{{ c.category_name }}</td>
+        <td style="color:#c0392b;">₹ {{ "%.2f"|format(c.amount or 0) }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="2" style="text-align:center;">No category data found.</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
 <div class="card">
   <table border="1" width="100%" cellpadding="10" class="billing-table">
     <tr>
-      <th>Payment ID</th>
+      <th>ID</th>
       <th>Date</th>
-      <th>Student</th>
       <th>Branch</th>
-      <th>Phone</th>
-      <th>Invoice No</th>
-      <th>Receipt No</th>
+      <th>Category</th>
+      <th>Title</th>
+      <th>Amount</th>
       <th>Mode</th>
       <th>Reference No</th>
-      <th>Amount</th>
-      <th>Collected By</th>
-      <th>Action</th>
+      <th>Created By</th>
+      <th>Notes</th>
     </tr>
 
     {% for row in rows %}
     <tr>
-      <td>{{ row.payment_id }}</td>
-
-      <td>{{ row.payment_date }}</td>
-
-      <td>
-        <a href="{{ url_for('student_profile', student_id=row.student_id) }}">
-          {{ row.student_code }} - {{ row.full_name }}
-        </a>
-      </td>
-
-      <td>{{ row.branch_name or "-" }}</td>
-
-      <td>{{ row.phone or "-" }}</td>
-
-      <td>
-        <a href="{{ url_for('invoice_view', invoice_id=row.invoice_id) }}">
-          {{ row.invoice_no }}
-        </a>
-      </td>
-
-      <td>{{ row.receipt_no or "-" }}</td>
-
+      <td>{{ row.id }}</td>
+      <td>{{ row.expense_date }}</td>
+      <td>{{ row.branch_name }}</td>
+      <td>{{ row.category_name }}</td>
+      <td>{{ row.title }}</td>
+      <td style="color:#c0392b;">₹ {{ "%.2f"|format(row.amount or 0) }}</td>
       <td>{{ row.payment_mode }}</td>
-
       <td>{{ row.reference_no or "-" }}</td>
-
-      <td style="color:green;">
-        ₹ {{ "%.2f"|format(row.amount_paid or 0) }}
-      </td>
-
-      <td>{{ row.collected_by_name or "-" }}</td>
-
-      <td>
-        <a href="{{ url_for('receipt_view', payment_id=row.payment_id) }}">Receipt</a>
-      </td>
+      <td>{{ row.created_by_name or "-" }}</td>
+      <td>{{ row.notes or "-" }}</td>
     </tr>
     {% else %}
     <tr>
-      <td colspan="12" style="text-align:center;">No collections found for selected date range.</td>
+      <td colspan="10" style="text-align:center;">No expenses found for selected filters.</td>
     </tr>
     {% endfor %}
   </table>

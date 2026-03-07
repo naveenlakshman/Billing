@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Add Expense</h2>
+
+<div class="card">
+  <form method="post">
+    <div class="compact-grid">
+      <div class="form-group">
+        <label>Expense Date</label>
+        <input type="date" name="expense_date" value="{{ today }}" required>
+      </div>
+
+      <div class="form-group">
+        <label>Branch</label>
+        <select name="branch_id" required>
+          <option value="">Select Branch</option>
+          {% for b in branches %}
+          <option value="{{ b.id }}">{{ b.branch_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Category</label>
+        <select name="category_id" required>
+          <option value="">Select Category</option>
+          {% for c in categories %}
+          <option value="{{ c.id }}">{{ c.category_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Amount</label>
+        <input type="number" step="0.01" name="amount" required>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Title</label>
+      <input type="text" name="title" placeholder="Example: March electricity bill" required>
+    </div>
+
+    <div class="compact-grid">
+      <div class="form-group">
+        <label>Payment Mode</label>
+        <select name="payment_mode" required>
+          <option value="cash">Cash</option>
+          <option value="upi">UPI</option>
+          <option value="bank_transfer">Bank Transfer</option>
+          <option value="card">Card</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Reference No</label>
+        <input type="text" name="reference_no" placeholder="Txn ID / Ref No">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea name="notes" rows="3" placeholder="Optional notes"></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Save Expense</button>
+    <a href="{{ url_for('expenses') }}" class="btn">Cancel</a>
+  </form>
+</div>
+{% endblock %}

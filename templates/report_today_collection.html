@@ -3,6 +3,26 @@
 {% block content %}
 <h2>Reports - Today Collection</h2>
 
+<div class="card">
+  <form method="get" class="search-form">
+    <div class="form-group">
+      <label>Branch</label>
+      <select name="branch_id">
+        <option value="">All Branches</option>
+        {% for b in branches %}
+        <option value="{{ b.id }}" {% if branch_id == (b.id|string) %}selected{% endif %}>
+          {{ b.branch_name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-group" style="align-self:end;">
+      <button type="submit" class="btn btn-primary">Filter</button>
+    </div>
+  </form>
+</div>
+
 <div class="grid">
   <div class="card stat-card">
     <h3>Total Collection</h3>
@@ -47,6 +67,7 @@
     <tr>
       <th>Payment ID</th>
       <th>Student</th>
+      <th>Branch</th>
       <th>Phone</th>
       <th>Invoice No</th>
       <th>Receipt No</th>
@@ -66,6 +87,8 @@
           {{ row.student_code }} - {{ row.full_name }}
         </a>
       </td>
+
+      <td>{{ row.branch_name or "-" }}</td>
 
       <td>{{ row.phone or "-" }}</td>
 
@@ -93,7 +116,7 @@
     </tr>
     {% else %}
     <tr>
-      <td colspan="10" style="text-align:center;">No collections found for today.</td>
+      <td colspan="11" style="text-align:center;">No collections found for today.</td>
     </tr>
     {% endfor %}
   </table>

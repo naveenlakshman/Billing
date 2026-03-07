@@ -6,6 +6,7 @@
 <div class="card">
   <p><strong>Invoice No:</strong> {{ invoice.invoice_no }}</p>
   <p><strong>Student:</strong> {{ invoice.student_code }} - {{ invoice.full_name }}</p>
+  <p><strong>Branch:</strong> {{ invoice.branch_name or "-" }}</p>
   <p><strong>Total Amount:</strong> ₹ {{ "%.2f"|format(summary.total_amount) }}</p>
   <p><strong>Paid Amount:</strong> ₹ {{ "%.2f"|format(summary.total_paid) }}</p>
   <p><strong>Balance Amount:</strong> ₹ {{ "%.2f"|format(summary.balance) }}</p>

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Expense Categories</h2>
+
+<div class="page-actions">
+  <a class="btn btn-primary" href="{{ url_for('expense_category_new') }}">Add Category</a>
+  <a class="btn" href="{{ url_for('expenses') }}">Back to Expenses</a>
+</div>
+
+<div class="card">
+  <table border="1" width="100%" cellpadding="10" class="billing-table">
+    <tr>
+      <th>ID</th>
+      <th>Category Name</th>
+      <th>Status</th>
+    </tr>
+
+    {% for c in categories %}
+    <tr>
+      <td>{{ c.id }}</td>
+      <td>{{ c.category_name }}</td>
+      <td>{{ "Active" if c.is_active else "Inactive" }}</td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="3" style="text-align:center;">No categories found.</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

@@ -23,6 +23,7 @@
     <p><strong>Invoice Date:</strong> {{ invoice.invoice_date }}</p>
     <p><strong>Student:</strong> {{ invoice.student_code }} - {{ invoice.full_name }}</p>
     <p><strong>Phone:</strong> {{ invoice.phone }}</p>
+    <p><strong>Branch:</strong> {{ invoice.branch_name or "-" }}</p>
     <p><strong>Status:</strong> {{ invoice.status }}</p>
   </div>
 
