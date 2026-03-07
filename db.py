@@ -10,7 +10,36 @@ def get_conn():
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
+def log_activity(user_id, branch_id, action_type, module_name, record_id, description):
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
 
+        now = datetime.now().isoformat(timespec="seconds")
+
+        cur.execute("""
+            INSERT INTO activity_logs (
+                user_id,
+                branch_id,
+                action_type,
+                module_name,
+                record_id,
+                description,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            user_id,
+            branch_id,
+            action_type,
+            module_name,
+            record_id,
+            description,
+            now
+        ))
+        conn.commit()
+    finally:
+        conn.close()    
 def add_column_if_not_exists(cur, table_name, column_name, column_def):
     cur.execute(f"PRAGMA table_info({table_name})")
     columns = [row["name"] for row in cur.fetchall()]
@@ -202,6 +231,21 @@ def init_db():
             FOREIGN KEY (branch_id) REFERENCES branches(id),
             FOREIGN KEY (category_id) REFERENCES expense_categories(id),
             FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+    """)
+        # ---------- ACTIVITY LOGS ----------
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS activity_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            branch_id INTEGER,
+            action_type TEXT NOT NULL,
+            module_name TEXT NOT NULL,
+            record_id INTEGER,
+            description TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (branch_id) REFERENCES branches(id)
         )
     """)
 

@@ -644,3 +644,18 @@ body {
         grid-template-columns: 1fr 1fr;
     }
 }
+
+.search-form .form-group {
+    min-width: 180px;
+}
+
+.btn-link {
+    background: none;
+    border: none;
+    color: #1d4ed8;
+    cursor: pointer;
+    padding: 0;
+    margin-left: 10px;
+    font: inherit;
+    text-decoration: underline;
+}

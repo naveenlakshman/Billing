@@ -1,9 +1,12 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import check_password_hash
 from config import SECRET_KEY
-from db import init_db, get_conn
+from db import get_conn, init_db, log_activity
 import calendar
 from datetime import datetime, date
+from functools import wraps
+from werkzeug.security import generate_password_hash
+
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
@@ -12,16 +15,41 @@ init_db()
 
 
 def login_required(route_function):
-    from functools import wraps
-
     @wraps(route_function)
     def wrapper(*args, **kwargs):
         if "user_id" not in session:
             flash("Please login first.", "warning")
             return redirect(url_for("login"))
         return route_function(*args, **kwargs)
-
     return wrapper
+
+def admin_required(route_function):
+    @wraps(route_function)
+    def wrapper(*args, **kwargs):
+        if "user_id" not in session:
+            flash("Please login first.", "warning")
+            return redirect(url_for("login"))
+
+        if session.get("role") != "admin":
+            flash("Access denied.", "danger")
+            return redirect(url_for("dashboard"))
+
+        return route_function(*args, **kwargs)
+    return wrapper
+
+def safe_log_activity(user_id=None, branch_id=None, action_type="", module_name="", record_id=None, description=""):
+    try:
+        log_activity(
+            user_id=user_id,
+            branch_id=branch_id,
+            action_type=action_type,
+            module_name=module_name,
+            record_id=record_id,
+            description=description
+        )
+    except Exception as e:
+        print("Activity log error:", e)
+
 
 def get_invoice_payment_summary(invoice_id):
     conn = get_conn()
@@ -52,6 +80,7 @@ def get_invoice_payment_summary(invoice_id):
         "total_paid": total_paid,
         "balance": balance
     }
+
 
 def number_to_words_indian(amount):
     amount = round(float(amount), 2)
@@ -118,6 +147,7 @@ def number_to_words_indian(amount):
 
     result += " Only"
     return result
+
 
 def update_invoice_status(conn, invoice_id):
     cur = conn.cursor()
@@ -206,6 +236,7 @@ def allocate_payment_to_installments(conn, invoice_id, payment_amount):
 
         remaining -= allocate
 
+
 @app.route("/")
 def home():
     if "user_id" in session:
@@ -233,6 +264,18 @@ def login():
             session["full_name"] = user["full_name"]
             session["username"] = user["username"]
             session["role"] = user["role"]
+            session["branch_id"] = user["branch_id"]
+            session["can_view_all_branches"] = user["can_view_all_branches"]
+
+            safe_log_activity(
+                user_id=user["id"],
+                branch_id=user["branch_id"],
+                action_type="login",
+                module_name="users",
+                record_id=user["id"],
+                description=f"User {user['username']} logged in"
+            )
+
             flash("Login successful.", "success")
             return redirect(url_for("dashboard"))
         else:
@@ -256,7 +299,6 @@ def dashboard():
         year = today.year
         month = today.month
 
-        # Indian financial year = Apr to Mar
         if period_key == "this_fy":
             if month >= 4:
                 start_date = date(year, 4, 1)
@@ -301,7 +343,6 @@ def dashboard():
 
     start_date, end_date = get_period_range(period)
 
-    # Load branches
     cur.execute("""
         SELECT *
         FROM branches
@@ -310,7 +351,6 @@ def dashboard():
     """)
     branches = cur.fetchall()
 
-    # Summary counts
     student_query = "SELECT COUNT(*) AS total_students FROM students"
     student_params = []
 
@@ -371,9 +411,6 @@ def dashboard():
 
     net_position = total_receipts - total_expenses
 
-    # -----------------------------
-    # Receivables Aging
-    # -----------------------------
     aging_query = """
         SELECT
             installment_plans.due_date,
@@ -428,9 +465,6 @@ def dashboard():
         bucket_above_45
     )
 
-    # -----------------------------
-    # Month buckets for chart
-    # -----------------------------
     month_keys = []
     month_labels = []
 
@@ -455,7 +489,6 @@ def dashboard():
     receipts_map = {k: 0.0 for k in month_keys}
     expenses_map = {k: 0.0 for k in month_keys}
 
-    # Monthly sales
     monthly_sales_query = """
         SELECT
             substr(invoice_date, 1, 7) AS ym,
@@ -477,7 +510,6 @@ def dashboard():
         if ym in sales_map:
             sales_map[ym] = float(row["total_amount"] or 0)
 
-    # Monthly receipts
     monthly_receipts_query = """
         SELECT
             substr(payment_date, 1, 7) AS ym,
@@ -499,7 +531,6 @@ def dashboard():
         if ym in receipts_map:
             receipts_map[ym] = float(row["total_amount"] or 0)
 
-    # Monthly expenses
     monthly_expenses_query = """
         SELECT
             substr(expense_date, 1, 7) AS ym,
@@ -557,11 +588,27 @@ def dashboard():
         expenses_data=expenses_data
     )
 
+
 @app.route("/logout")
 def logout():
+    user_id = session.get("user_id")
+    branch_id = session.get("branch_id")
+    username = session.get("username", "unknown")
+
+    if user_id:
+        safe_log_activity(
+            user_id=user_id,
+            branch_id=branch_id,
+            action_type="logout",
+            module_name="users",
+            record_id=user_id,
+            description=f"User {username} logged out"
+        )
+
     session.clear()
     flash("You have been logged out.", "info")
     return redirect(url_for("login"))
+
 
 @app.route("/students")
 @login_required
@@ -583,8 +630,6 @@ def students():
     conn.close()
 
     return render_template("students.html", students=students)
-
-from datetime import datetime
 
 
 @app.route("/student/new", methods=["GET", "POST"])
@@ -641,10 +686,18 @@ def student_new():
         conn.commit()
         conn.close()
 
+        safe_log_activity(
+            user_id=session["user_id"],
+            branch_id=branch_id,
+            action_type="create",
+            module_name="students",
+            record_id=student_id,
+            description=f"Created student {full_name} ({student_code})"
+        )
+
         flash("Student added successfully.", "success")
         return redirect(url_for("students"))
 
-    # GET request -> load branches for dropdown
     cur.execute("""
         SELECT *
         FROM branches
@@ -661,10 +714,10 @@ def student_new():
         branches=branches
     )
 
+
 @app.route("/courses")
 @login_required
 def courses():
-
     conn = get_conn()
     cur = conn.cursor()
 
@@ -678,12 +731,11 @@ def courses():
 
     return render_template("courses.html", courses=courses)
 
+
 @app.route("/course/new", methods=["GET", "POST"])
 @login_required
 def course_new():
-
     if request.method == "POST":
-
         course_name = request.form["course_name"]
         duration = request.form["duration"]
         fee = request.form["fee"]
@@ -691,7 +743,6 @@ def course_new():
         conn = get_conn()
         cur = conn.cursor()
 
-        from datetime import datetime
         now = datetime.now().isoformat(timespec="seconds")
 
         cur.execute("""
@@ -711,14 +762,24 @@ def course_new():
             now
         ))
 
+        course_id = cur.lastrowid
         conn.commit()
         conn.close()
 
-        flash("Course added successfully.", "success")
+        safe_log_activity(
+            user_id=session["user_id"],
+            branch_id=session.get("branch_id"),
+            action_type="create",
+            module_name="courses",
+            record_id=course_id,
+            description=f"Created course {course_name}"
+        )
 
+        flash("Course added successfully.", "success")
         return redirect(url_for("courses"))
 
     return render_template("course_form.html")
+
 
 @app.route("/invoices")
 @login_required
@@ -738,10 +799,13 @@ def invoices():
         students.id AS student_id,
         students.student_code,
         students.full_name,
+        branches.branch_name,
         IFNULL(SUM(payments.amount_paid), 0) AS paid_amount
     FROM invoices
     JOIN students
         ON invoices.student_id = students.id
+    LEFT JOIN branches
+        ON invoices.branch_id = branches.id
     LEFT JOIN payments
         ON payments.invoice_id = invoices.id
     """
@@ -770,13 +834,13 @@ def invoices():
 
     return render_template("invoices.html", invoices=invoices, search=search)
 
+
 @app.route("/invoice/new", methods=["GET", "POST"])
 @login_required
 def invoice_new():
     conn = get_conn()
     cur = conn.cursor()
 
-    # Load students and courses for dropdowns
     cur.execute("""
         SELECT students.*, branches.branch_name
         FROM students
@@ -800,7 +864,6 @@ def invoice_new():
             installment_type = request.form["installment_type"]
             notes = request.form.get("notes", "").strip()
 
-            # Multiple item rows
             item_course_ids = request.form.getlist("item_course_id[]")
             item_descriptions = request.form.getlist("item_description[]")
             item_qtys = request.form.getlist("item_qty[]")
@@ -817,9 +880,8 @@ def invoice_new():
                 conn.close()
                 return redirect(url_for("invoice_new"))
 
-            # Fetch student and branch
             cur.execute("""
-                SELECT id, branch_id
+                SELECT id, branch_id, full_name
                 FROM students
                 WHERE id = ?
             """, (student_id,))
@@ -844,7 +906,6 @@ def invoice_new():
             discount_amount = 0.0
             total_amount = 0.0
 
-            # Build invoice rows
             for i in range(len(item_descriptions)):
                 description = (item_descriptions[i] or "").strip()
                 course_id_raw = (item_course_ids[i] or "").strip()
@@ -856,7 +917,6 @@ def invoice_new():
                 rate = float(rate_raw or 0)
                 row_discount = float(discount_raw or 0)
 
-                # Skip fully blank rows
                 if not description and qty == 0 and rate == 0:
                     continue
 
@@ -904,7 +964,6 @@ def invoice_new():
                 flash("Please enter at least one valid bill item.", "danger")
                 return redirect(url_for("invoice_new"))
 
-            # Create invoice first
             cur.execute("""
                 INSERT INTO invoices (
                     invoice_no,
@@ -930,9 +989,9 @@ def invoice_new():
                 branch_id,
                 invoice_date,
                 subtotal,
-                "none",          # invoice-level discount not used now
-                0,               # kept for compatibility with existing table
-                discount_amount, # total row discount
+                "none",
+                0,
+                discount_amount,
                 total_amount,
                 installment_type,
                 notes,
@@ -951,7 +1010,6 @@ def invoice_new():
                 WHERE id = ?
             """, (invoice_no, invoice_id))
 
-            # Save invoice items
             for item in invoice_items_to_save:
                 cur.execute("""
                     INSERT INTO invoice_items (
@@ -974,7 +1032,6 @@ def invoice_new():
                     now
                 ))
 
-            # Save installment plan
             if installment_type == "full":
                 due_date = request.form.get("full_due_date", "").strip()
 
@@ -1081,6 +1138,15 @@ def invoice_new():
             conn.commit()
             conn.close()
 
+            safe_log_activity(
+                user_id=session["user_id"],
+                branch_id=branch_id,
+                action_type="create",
+                module_name="invoices",
+                record_id=invoice_id,
+                description=f"Created invoice {invoice_no} for student {student['full_name']}"
+            )
+
             flash("Invoice created successfully.", "success")
             return redirect(url_for("invoice_view", invoice_id=invoice_id))
 
@@ -1099,6 +1165,7 @@ def invoice_new():
     conn.close()
     today = datetime.today().strftime("%Y-%m-%d")
     return render_template("invoice_form.html", students=students, courses=courses, today=today)
+
 
 @app.route("/invoice/<int:invoice_id>")
 @login_required
@@ -1181,17 +1248,21 @@ def invoice_view(invoice_id):
         balance_amount=balance_amount
     )
 
+
 @app.route("/student/<int:student_id>")
 @login_required
 def student_profile(student_id):
     conn = get_conn()
     cur = conn.cursor()
 
-    # Student details
     cur.execute("""
-        SELECT *
+        SELECT
+            students.*,
+            branches.branch_name
         FROM students
-        WHERE id = ?
+        LEFT JOIN branches
+            ON students.branch_id = branches.id
+        WHERE students.id = ?
     """, (student_id,))
     student = cur.fetchone()
 
@@ -1200,7 +1271,6 @@ def student_profile(student_id):
         flash("Student not found.", "danger")
         return redirect(url_for("students"))
 
-    # Student invoice list with paid amount
     cur.execute("""
         SELECT
             invoices.id,
@@ -1218,7 +1288,6 @@ def student_profile(student_id):
     """, (student_id,))
     invoices = cur.fetchall()
 
-    # Summary
     cur.execute("""
         SELECT
             COUNT(*) AS total_invoices,
@@ -1254,6 +1323,7 @@ def student_profile(student_id):
         total_paid=total_paid,
         total_balance=total_balance
     )
+
 
 @app.route("/invoice/<int:invoice_id>/payment/new", methods=["GET", "POST"])
 @login_required
@@ -1363,6 +1433,15 @@ def payment_new(invoice_id):
             conn.commit()
             conn.close()
 
+            safe_log_activity(
+                user_id=session["user_id"],
+                branch_id=branch_id,
+                action_type="record_payment",
+                module_name="payments",
+                record_id=payment_id,
+                description=f"Recorded payment of ₹{amount_paid:.2f} for invoice {invoice['invoice_no']}"
+            )
+
             flash("Payment recorded successfully.", "success")
             return redirect(url_for("invoice_view", invoice_id=invoice_id))
 
@@ -1386,6 +1465,8 @@ def payment_new(invoice_id):
         summary=summary,
         today=today
     )
+
+
 @app.route("/receipt/<int:payment_id>")
 @login_required
 def receipt_view(payment_id):
@@ -1437,7 +1518,6 @@ def receipt_view(payment_id):
         flash("Receipt not found.", "danger")
         return redirect(url_for("invoices"))
 
-    # Total paid till now for this invoice
     cur.execute("""
         SELECT IFNULL(SUM(amount_paid), 0) AS total_paid
         FROM payments
@@ -1464,10 +1544,12 @@ def receipt_view(payment_id):
         amount_in_words=amount_in_words
     )
 
+
 @app.route("/reports")
 @login_required
 def reports_center():
     return render_template("reports_center.html")
+
 
 @app.route("/reports/overdue-installments")
 @login_required
@@ -1478,7 +1560,6 @@ def overdue_installments_report():
     today = datetime.today().strftime("%Y-%m-%d")
     branch_id = request.args.get("branch_id", "").strip()
 
-    # Load branches for filter dropdown
     cur.execute("""
         SELECT *
         FROM branches
@@ -1582,6 +1663,7 @@ def overdue_installments_report():
         branch_id=branch_id
     )
 
+
 @app.route("/reports/today-collection")
 @login_required
 def today_collection_report():
@@ -1591,7 +1673,6 @@ def today_collection_report():
     today = datetime.today().strftime("%Y-%m-%d")
     branch_id = request.args.get("branch_id", "").strip()
 
-    # Load branches for filter dropdown
     cur.execute("""
         SELECT *
         FROM branches
@@ -1688,6 +1769,7 @@ def today_collection_report():
         branch_id=branch_id
     )
 
+
 @app.route("/reports/student-outstanding")
 @login_required
 def student_outstanding_report():
@@ -1696,7 +1778,6 @@ def student_outstanding_report():
 
     branch_id = request.args.get("branch_id", "").strip()
 
-    # Load branches for filter dropdown
     cur.execute("""
         SELECT *
         FROM branches
@@ -1796,6 +1877,7 @@ def student_outstanding_report():
         branch_id=branch_id
     )
 
+
 @app.route("/reports/unpaid-invoices")
 @login_required
 def unpaid_invoices_report():
@@ -1804,7 +1886,6 @@ def unpaid_invoices_report():
 
     branch_id = request.args.get("branch_id", "").strip()
 
-    # Load branches for filter dropdown
     cur.execute("""
         SELECT *
         FROM branches
@@ -1899,6 +1980,7 @@ def unpaid_invoices_report():
         branch_id=branch_id
     )
 
+
 @app.route("/reports/date-wise-collection", methods=["GET"])
 @login_required
 def date_wise_collection_report():
@@ -1911,13 +1993,11 @@ def date_wise_collection_report():
 
     today = datetime.today().strftime("%Y-%m-%d")
 
-    # Default date range = today
     if not from_date:
         from_date = today
     if not to_date:
         to_date = today
 
-    # Load branches for filter dropdown
     cur.execute("""
         SELECT *
         FROM branches
@@ -2015,6 +2095,7 @@ def date_wise_collection_report():
         card_total=card_total
     )
 
+
 @app.route("/reports/course-wise-revenue")
 @login_required
 def course_wise_revenue_report():
@@ -2040,7 +2121,6 @@ def course_wise_revenue_report():
     for course in courses:
         course_id = course["course_id"]
 
-        # Total billed for this course
         cur.execute("""
             SELECT
                 COUNT(DISTINCT ii.invoice_id) AS total_invoices,
@@ -2055,10 +2135,6 @@ def course_wise_revenue_report():
         total_item_rows = int(billed_row["total_item_rows"] or 0)
         total_billed = float(billed_row["total_billed"] or 0)
 
-        # Proportional payment allocation:
-        # For each invoice containing this course,
-        # course share = course line total / invoice total
-        # allocated paid = invoice total paid * share
         cur.execute("""
             SELECT DISTINCT ii.invoice_id
             FROM invoice_items ii
@@ -2130,6 +2206,7 @@ def course_wise_revenue_report():
         total_balance=grand_total_balance
     )
 
+
 @app.route("/expenses")
 @login_required
 def expenses():
@@ -2166,6 +2243,7 @@ def expenses():
         expenses=expenses,
         total_expense=total_expense
     )
+
 
 @app.route("/expense/new", methods=["GET", "POST"])
 @login_required
@@ -2224,8 +2302,18 @@ def expense_new():
             now
         ))
 
+        expense_id = cur.lastrowid
         conn.commit()
         conn.close()
+
+        safe_log_activity(
+            user_id=session["user_id"],
+            branch_id=branch_id,
+            action_type="create",
+            module_name="expenses",
+            record_id=expense_id,
+            description=f"Recorded expense '{title}' of ₹{amount:.2f}"
+        )
 
         flash("Expense recorded successfully.", "success")
         return redirect(url_for("expenses"))
@@ -2256,30 +2344,54 @@ def expense_new():
         today=today
     )
 
+
 @app.route("/expense-category/new", methods=["GET", "POST"])
 @login_required
 def expense_category_new():
     if request.method == "POST":
         category_name = request.form["category_name"].strip()
-        
+
         if not category_name:
             flash("Category name is required.", "danger")
             return redirect(url_for("expense_category_new"))
-        
+
         conn = get_conn()
         cur = conn.cursor()
-        
+
+        cur.execute("SELECT id FROM expense_categories WHERE category_name = ?", (category_name,))
+        existing = cur.fetchone()
+        if existing:
+            conn.close()
+            flash("Category already exists.", "danger")
+            return redirect(url_for("expense_category_new"))
+
+        now = datetime.now().isoformat(timespec="seconds")
+
         cur.execute("""
-            INSERT INTO expense_categories (category_name, is_active)
-            VALUES (?, 1)
-        """, (category_name,))
-        
+            INSERT INTO expense_categories (category_name, is_active, created_at)
+            VALUES (?, ?, ?)
+        """, (
+            category_name,
+            1,
+            now
+        ))
+
+        category_id = cur.lastrowid
         conn.commit()
         conn.close()
-        
+
+        safe_log_activity(
+            user_id=session["user_id"],
+            branch_id=session.get("branch_id"),
+            action_type="create",
+            module_name="expense_categories",
+            record_id=category_id,
+            description=f"Created expense category {category_name}"
+        )
+
         flash("Expense category created successfully.", "success")
         return redirect(url_for("expense_categories"))
-    
+
     return render_template("expense_category_form.html")
 
 
@@ -2299,6 +2411,7 @@ def expense_categories():
     conn.close()
     return render_template("expense_categories.html", categories=categories)
 
+
 @app.route("/reports/expenses", methods=["GET"])
 @login_required
 def expenses_report():
@@ -2316,7 +2429,6 @@ def expenses_report():
     if not to_date:
         to_date = today
 
-    # Load branches for filter dropdown
     cur.execute("""
         SELECT *
         FROM branches
@@ -2415,6 +2527,349 @@ def expenses_report():
         card_total=card_total,
         category_rows=category_rows
     )
+
+@app.route("/activity-logs", methods=["GET"])
+@login_required
+def activity_logs():
+    if session.get("role") != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("dashboard"))
+
+    conn = get_conn()
+    cur = conn.cursor()
+
+    from_date = request.args.get("from_date", "").strip()
+    to_date = request.args.get("to_date", "").strip()
+    user_id = request.args.get("user_id", "").strip()
+    branch_id = request.args.get("branch_id", "").strip()
+    module_name = request.args.get("module_name", "").strip()
+
+    today = datetime.today().strftime("%Y-%m-%d")
+
+    if not from_date:
+        from_date = today
+    if not to_date:
+        to_date = today
+
+    # Filters data
+    cur.execute("""
+        SELECT id, full_name, username
+        FROM users
+        WHERE is_active = 1
+        ORDER BY full_name
+    """)
+    users = cur.fetchall()
+
+    cur.execute("""
+        SELECT *
+        FROM branches
+        WHERE is_active = 1
+        ORDER BY branch_name
+    """)
+    branches = cur.fetchall()
+
+    cur.execute("""
+        SELECT DISTINCT module_name
+        FROM activity_logs
+        ORDER BY module_name
+    """)
+    modules = cur.fetchall()
+
+    query = """
+        SELECT
+            activity_logs.*,
+            users.full_name,
+            users.username,
+            branches.branch_name
+        FROM activity_logs
+        LEFT JOIN users
+            ON activity_logs.user_id = users.id
+        LEFT JOIN branches
+            ON activity_logs.branch_id = branches.id
+        WHERE substr(activity_logs.created_at, 1, 10) BETWEEN ? AND ?
+    """
+
+    params = [from_date, to_date]
+
+    if user_id:
+        query += " AND activity_logs.user_id = ? "
+        params.append(user_id)
+
+    if branch_id:
+        query += " AND activity_logs.branch_id = ? "
+        params.append(branch_id)
+
+    if module_name:
+        query += " AND activity_logs.module_name = ? "
+        params.append(module_name)
+
+    query += " ORDER BY activity_logs.id DESC "
+
+    cur.execute(query, params)
+    logs = cur.fetchall()
+
+    conn.close()
+
+    return render_template(
+        "activity_logs.html",
+        logs=logs,
+        users=users,
+        branches=branches,
+        modules=modules,
+        from_date=from_date,
+        to_date=to_date,
+        user_id=user_id,
+        branch_id=branch_id,
+        module_name=module_name
+    )
+
+@app.route("/users")
+@admin_required
+def users():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            users.*,
+            branches.branch_name
+        FROM users
+        LEFT JOIN branches
+            ON users.branch_id = branches.id
+        ORDER BY users.id DESC
+    """)
+    users_list = cur.fetchall()
+
+    conn.close()
+    return render_template("users.html", users=users_list)
+
+@app.route("/user/new", methods=["GET", "POST"])
+@admin_required
+def user_new():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    if request.method == "POST":
+        full_name = request.form["full_name"].strip()
+        username = request.form["username"].strip()
+        password = request.form["password"]
+        role = request.form["role"]
+        phone = request.form.get("phone", "").strip()
+        branch_id = request.form["branch_id"]
+        can_view_all_branches = 1 if request.form.get("can_view_all_branches") == "1" else 0
+
+        if not full_name or not username or not password:
+            conn.close()
+            flash("Full name, username and password are required.", "danger")
+            return redirect(url_for("user_new"))
+
+        cur.execute("SELECT id FROM users WHERE username = ?", (username,))
+        existing = cur.fetchone()
+        if existing:
+            conn.close()
+            flash("Username already exists.", "danger")
+            return redirect(url_for("user_new"))
+
+        now = datetime.now().isoformat(timespec="seconds")
+
+        cur.execute("""
+            INSERT INTO users (
+                full_name,
+                username,
+                password_hash,
+                role,
+                phone,
+                is_active,
+                created_at,
+                updated_at,
+                branch_id,
+                can_view_all_branches
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            full_name,
+            username,
+            generate_password_hash(password),
+            role,
+            phone,
+            1,
+            now,
+            now,
+            branch_id,
+            can_view_all_branches
+        ))
+
+        user_id = cur.lastrowid
+        conn.commit()
+        conn.close()
+
+        safe_log_activity(
+            user_id=session["user_id"],
+            branch_id=branch_id,
+            action_type="create",
+            module_name="users",
+            record_id=user_id,
+            description=f"Created user {username} ({role})"
+        )
+
+        flash("User created successfully.", "success")
+        return redirect(url_for("users"))
+
+    cur.execute("""
+        SELECT *
+        FROM branches
+        WHERE is_active = 1
+        ORDER BY branch_name
+    """)
+    branches = cur.fetchall()
+    conn.close()
+
+    return render_template("user_form.html", user=None, branches=branches)
+
+@app.route("/user/<int:user_id>/edit", methods=["GET", "POST"])
+@admin_required
+def user_edit(user_id):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    user = cur.fetchone()
+
+    if not user:
+        conn.close()
+        flash("User not found.", "danger")
+        return redirect(url_for("users"))
+
+    if request.method == "POST":
+        full_name = request.form["full_name"].strip()
+        username = request.form["username"].strip()
+        password = request.form.get("password", "")
+        role = request.form["role"]
+        phone = request.form.get("phone", "").strip()
+        branch_id = request.form["branch_id"]
+        can_view_all_branches = 1 if request.form.get("can_view_all_branches") == "1" else 0
+
+        if not full_name or not username:
+            conn.close()
+            flash("Full name and username are required.", "danger")
+            return redirect(url_for("user_edit", user_id=user_id))
+
+        cur.execute("""
+            SELECT id FROM users
+            WHERE username = ? AND id != ?
+        """, (username, user_id))
+        existing = cur.fetchone()
+
+        if existing:
+            conn.close()
+            flash("Username already exists.", "danger")
+            return redirect(url_for("user_edit", user_id=user_id))
+
+        now = datetime.now().isoformat(timespec="seconds")
+
+        if password.strip():
+            cur.execute("""
+                UPDATE users
+                SET full_name = ?, username = ?, password_hash = ?, role = ?,
+                    phone = ?, branch_id = ?, can_view_all_branches = ?, updated_at = ?
+                WHERE id = ?
+            """, (
+                full_name,
+                username,
+                generate_password_hash(password),
+                role,
+                phone,
+                branch_id,
+                can_view_all_branches,
+                now,
+                user_id
+            ))
+        else:
+            cur.execute("""
+                UPDATE users
+                SET full_name = ?, username = ?, role = ?,
+                    phone = ?, branch_id = ?, can_view_all_branches = ?, updated_at = ?
+                WHERE id = ?
+            """, (
+                full_name,
+                username,
+                role,
+                phone,
+                branch_id,
+                can_view_all_branches,
+                now,
+                user_id
+            ))
+
+        conn.commit()
+        conn.close()
+
+        safe_log_activity(
+            user_id=session["user_id"],
+            branch_id=branch_id,
+            action_type="update",
+            module_name="users",
+            record_id=user_id,
+            description=f"Updated user {username}"
+        )
+
+        flash("User updated successfully.", "success")
+        return redirect(url_for("users"))
+
+    cur.execute("""
+        SELECT *
+        FROM branches
+        WHERE is_active = 1
+        ORDER BY branch_name
+    """)
+    branches = cur.fetchall()
+    conn.close()
+
+    return render_template("user_form.html", user=user, branches=branches)
+
+@app.route("/user/<int:user_id>/toggle-status", methods=["POST"])
+@admin_required
+def user_toggle_status(user_id):
+    if user_id == session.get("user_id"):
+        flash("You cannot deactivate your own account.", "danger")
+        return redirect(url_for("users"))
+
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    user = cur.fetchone()
+
+    if not user:
+        conn.close()
+        flash("User not found.", "danger")
+        return redirect(url_for("users"))
+
+    new_status = 0 if user["is_active"] == 1 else 1
+    now = datetime.now().isoformat(timespec="seconds")
+
+    cur.execute("""
+        UPDATE users
+        SET is_active = ?, updated_at = ?
+        WHERE id = ?
+    """, (new_status, now, user_id))
+
+    conn.commit()
+    conn.close()
+
+    action_word = "activated" if new_status == 1 else "deactivated"
+
+    safe_log_activity(
+        user_id=session["user_id"],
+        branch_id=user["branch_id"],
+        action_type="update",
+        module_name="users",
+        record_id=user_id,
+        description=f"{action_word.capitalize()} user {user['username']}"
+    )
+
+    flash(f"User {action_word} successfully.", "success")
+    return redirect(url_for("users"))
 
 
 

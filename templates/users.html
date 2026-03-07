@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Users</h2>
+
+<div class="page-actions">
+  <a class="btn btn-primary" href="{{ url_for('user_new') }}">Add User</a>
+</div>
+
+<div class="card">
+  <table border="1" width="100%" cellpadding="10" class="billing-table">
+    <tr>
+      <th>ID</th>
+      <th>Name</th>
+      <th>Username</th>
+      <th>Role</th>
+      <th>Phone</th>
+      <th>Branch</th>
+      <th>View Access</th>
+      <th>Status</th>
+      <th>Action</th>
+    </tr>
+
+    {% for u in users %}
+    <tr>
+      <td>{{ u.id }}</td>
+      <td>{{ u.full_name }}</td>
+      <td>{{ u.username }}</td>
+      <td>{{ u.role }}</td>
+      <td>{{ u.phone or "-" }}</td>
+      <td>{{ u.branch_name or "-" }}</td>
+      <td>
+        {% if u.can_view_all_branches %}
+          All Branches
+        {% else %}
+          Own Branch
+        {% endif %}
+      </td>
+      <td>
+        {% if u.is_active %}
+          Active
+        {% else %}
+          Inactive
+        {% endif %}
+      </td>
+      <td>
+        <a href="{{ url_for('user_edit', user_id=u.id) }}">Edit</a>
+
+        <form method="post"
+              action="{{ url_for('user_toggle_status', user_id=u.id) }}"
+              style="display:inline;">
+          <button type="submit" class="btn-link">
+            {% if u.is_active %}Deactivate{% else %}Activate{% endif %}
+          </button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="9" style="text-align:center;">No users found.</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

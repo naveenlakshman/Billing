@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>{% if user %}Edit User{% else %}Add User{% endif %}</h2>
+
+<div class="card">
+  <form method="post">
+    <div class="compact-grid">
+      <div class="form-group">
+        <label>Full Name</label>
+        <input type="text" name="full_name" required
+               value="{{ user.full_name if user else '' }}">
+      </div>
+
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" name="username" required
+               value="{{ user.username if user else '' }}">
+      </div>
+    </div>
+
+    <div class="compact-grid">
+      <div class="form-group">
+        <label>Password {% if user %}(Leave blank to keep current password){% endif %}</label>
+        <input type="password" name="password" {% if not user %}required{% endif %}>
+      </div>
+
+      <div class="form-group">
+        <label>Phone</label>
+        <input type="text" name="phone"
+               value="{{ user.phone if user else '' }}">
+      </div>
+    </div>
+
+    <div class="compact-grid">
+      <div class="form-group">
+        <label>Role</label>
+        <select name="role" required>
+          <option value="admin" {% if user and user.role == 'admin' %}selected{% endif %}>Admin</option>
+          <option value="staff" {% if user and user.role == 'staff' %}selected{% endif %}>Staff</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Branch</label>
+        <select name="branch_id" required>
+          <option value="">Select Branch</option>
+          {% for b in branches %}
+          <option value="{{ b.id }}"
+            {% if user and user.branch_id == b.id %}selected{% endif %}>
+            {{ b.branch_name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Branch Access</label>
+      <select name="can_view_all_branches" required>
+        <option value="1" {% if user and user.can_view_all_branches == 1 %}selected{% endif %}>
+          Can View All Branches
+        </option>
+        <option value="0" {% if user and user.can_view_all_branches == 0 %}selected{% endif %}>
+          Can View Only Own Branch
+        </option>
+      </select>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Save User</button>
+    <a href="{{ url_for('users') }}" class="btn">Cancel</a>
+  </form>
+</div>
+{% endblock %}
