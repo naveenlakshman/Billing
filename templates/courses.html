@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2>Courses</h2>
+
+<a class="btn btn-primary" href="{{ url_for('course_new') }}">
+  Add Course
+</a>
+
+<br><br>
+
+<div class="card">
+
+<table border="1" width="100%" cellpadding="10">
+
+<tr>
+<th>ID</th>
+<th>Course Name</th>
+<th>Duration</th>
+<th>Fee</th>
+</tr>
+
+{% for c in courses %}
+
+<tr>
+<td>{{ c.id }}</td>
+<td>{{ c.course_name }}</td>
+<td>{{ c.duration }}</td>
+<td>₹ {{ c.fee }}</td>
+</tr>
+
+{% endfor %}
+
+</table>
+
+</div>
+
+{% endblock %}

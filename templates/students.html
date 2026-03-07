@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2>Students</h2>
+
+<a class="btn btn-primary" href="{{ url_for('student_new') }}">
+  Add Student
+</a>
+
+<br><br>
+
+<div class="card">
+
+<table border="1" width="100%" cellpadding="10">
+  <tr>
+    <th>ID</th>
+    <th>Student Code</th>
+    <th>Name</th>
+    <th>Phone</th>
+    <th>Email</th>
+  </tr>
+
+  {% for s in students %}
+  <tr>
+    <td>{{ s.id }}</td>
+    <td>{{ s.student_code }}</td>
+    <td>
+  <a href="{{ url_for('student_profile', student_id=s.id) }}">
+    {{ s.full_name }}
+  </a>
+</td>
+    <td>{{ s.phone }}</td>
+    <td>{{ s.email }}</td>
+  </tr>
+  {% endfor %}
+
+</table>
+
+</div>
+
+{% endblock %}

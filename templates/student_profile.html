@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-actions no-print">
+  <a class="btn" href="{{ url_for('students') }}">Back to Students</a>
+</div>
+
+<h2>Student Profile</h2>
+
+<div class="grid">
+  <div class="card">
+    <h3>Student Details</h3>
+    <p><strong>Student Code:</strong> {{ student.student_code }}</p>
+    <p><strong>Name:</strong> {{ student.full_name }}</p>
+    <p><strong>Phone:</strong> {{ student.phone or "-" }}</p>
+    <p><strong>Email:</strong> {{ student.email or "-" }}</p>
+    <p><strong>Address:</strong> {{ student.address or "-" }}</p>
+    <p><strong>Joined Date:</strong> {{ student.joined_date }}</p>
+    <p><strong>Status:</strong> {{ student.status }}</p>
+  </div>
+
+  <div class="card">
+    <h3>Billing Summary</h3>
+    <p><strong>Total Invoices:</strong> {{ total_invoices }}</p>
+    <p><strong>Total Billed:</strong> ₹ {{ "%.2f"|format(total_billed or 0) }}</p>
+    <p><strong>Total Paid:</strong> ₹ {{ "%.2f"|format(total_paid or 0) }}</p>
+    <p><strong>Total Balance:</strong> ₹ {{ "%.2f"|format(total_balance or 0) }}</p>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Invoice History</h3>
+
+  <table border="1" width="100%" cellpadding="10" class="billing-table">
+    <tr>
+      <th>ID</th>
+      <th>Invoice No</th>
+      <th>Date</th>
+      <th>Total</th>
+      <th>Paid</th>
+      <th>Balance</th>
+      <th>Status</th>
+      <th>Action</th>
+    </tr>
+
+    {% for inv in invoices %}
+    {% set balance = (inv.total_amount or 0) - (inv.paid_amount or 0) %}
+    <tr>
+      <td>{{ inv.id }}</td>
+      <td>
+        <a href="{{ url_for('invoice_view', invoice_id=inv.id) }}">
+          {{ inv.invoice_no }}
+        </a>
+      </td>
+      <td>{{ inv.invoice_date }}</td>
+      <td>₹ {{ "%.2f"|format(inv.total_amount or 0) }}</td>
+      <td style="color:green;">₹ {{ "%.2f"|format(inv.paid_amount or 0) }}</td>
+      <td style="color:#c0392b;">₹ {{ "%.2f"|format(balance or 0) }}</td>
+      <td>{{ inv.status }}</td>
+      <td>
+        <a href="{{ url_for('invoice_view', invoice_id=inv.id) }}">View</a>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="8" style="text-align:center;">No invoices found for this student.</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% endblock %}

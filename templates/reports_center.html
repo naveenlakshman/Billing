@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2>Reports Center</h2>
+
+<div class="card">
+  <p>Select a report to view.</p>
+</div>
+
+<div class="report-grid">
+
+  <div class="card report-card">
+    <h3>Receivables</h3>
+    <p>Track overdue and pending installment payments.</p>
+    <a class="btn btn-primary" href="{{ url_for('overdue_installments_report') }}">
+      Overdue Installments
+    </a>
+  </div>
+
+  <div class="card report-card">
+    <h3>Collections</h3>
+    <p>View payments collected for today.</p>
+    <a class="btn btn-primary" href="{{ url_for('today_collection_report') }}">
+      Today Collection
+    </a>
+  </div>
+
+  <div class="card report-card">
+    <h3>Invoices</h3>
+    <p>View unpaid and pending invoices.</p>
+    <a class="btn btn-primary" href="{{ url_for('unpaid_invoices_report') }}">
+      Unpaid Invoices
+    </a>
+  </div>
+
+  <div class="card report-card">
+    <h3>Students</h3>
+    <p>Check student-wise outstanding balances.</p>
+    <a class="btn btn-primary" href="{{ url_for('student_outstanding_report') }}">
+      Student Outstanding
+    </a>
+  </div>
+
+  <div class="card report-card">
+  <h3>Collection Range</h3>
+  <p>Check collections between any two dates.</p>
+  <a class="btn btn-primary" href="{{ url_for('date_wise_collection_report') }}">
+    Date-wise Collection
+  </a>
+</div>
+
+<div class="card report-card">
+  <h3>Courses</h3>
+  <p>Check course-wise billed, paid, and balance revenue.</p>
+  <a class="btn btn-primary" href="{{ url_for('course_wise_revenue_report') }}">
+    Course-wise Revenue
+  </a>
+</div>
+
+</div>
+
+{% endblock %}

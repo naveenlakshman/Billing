@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Reports - Unpaid & Pending Invoices</h2>
+
+<div class="grid">
+  <div class="card stat-card">
+    <h3>Total Invoices</h3>
+    <p>{{ total_invoices }}</p>
+  </div>
+
+  <div class="card stat-card">
+    <h3>Total Invoice Amount</h3>
+    <p>₹ {{ "%.2f"|format(total_amount or 0) }}</p>
+  </div>
+
+  <div class="card stat-card">
+    <h3>Total Paid</h3>
+    <p>₹ {{ "%.2f"|format(total_paid or 0) }}</p>
+  </div>
+
+  <div class="card stat-card">
+    <h3>Total Balance</h3>
+    <p>₹ {{ "%.2f"|format(total_balance or 0) }}</p>
+  </div>
+</div>
+
+<div class="card">
+  <table border="1" width="100%" cellpadding="10" class="billing-table">
+    <tr>
+      <th>Invoice No</th>
+      <th>Student</th>
+      <th>Phone</th>
+      <th>Invoice Date</th>
+      <th>Total</th>
+      <th>Paid</th>
+      <th>Balance</th>
+      <th>Status</th>
+      <th>Action</th>
+    </tr>
+
+    {% for row in rows %}
+    <tr>
+      <td>
+        <a href="{{ url_for('invoice_view', invoice_id=row.id) }}">
+          {{ row.invoice_no }}
+        </a>
+      </td>
+
+      <td>
+        <a href="{{ url_for('student_profile', student_id=row.student_id) }}">
+          {{ row.student_code }} - {{ row.full_name }}
+        </a>
+      </td>
+
+      <td>{{ row.phone or "-" }}</td>
+
+      <td>{{ row.invoice_date }}</td>
+
+      <td>₹ {{ "%.2f"|format(row.total_amount or 0) }}</td>
+
+      <td style="color:green;">
+        ₹ {{ "%.2f"|format(row.paid_amount or 0) }}
+      </td>
+
+      <td style="color:#c0392b;">
+        ₹ {{ "%.2f"|format(row.balance_amount or 0) }}
+      </td>
+
+      <td>{{ row.status }}</td>
+
+      <td>
+        <a href="{{ url_for('payment_new', invoice_id=row.id) }}">Record Payment</a>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="9" style="text-align:center;">No unpaid or pending invoices found.</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

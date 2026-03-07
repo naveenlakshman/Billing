@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Invoice Details</h2>
+
+<div class="page-actions">
+  <a class="btn btn-primary" href="{{ url_for('payment_new', invoice_id=invoice.id) }}">+ Record Payment</a>
+  <button class="btn btn-secondary" onclick="window.print()"> Print Invoice </button>
+</div>
+<div class="invoice-header">
+
+  <h1>Global IT Education</h1>
+  <p>Computer Training & Billing System</p>
+
+  <hr>
+
+</div>
+
+<div class="grid">
+    <div class="card">
+<h3>Invoice Summary</h3>
+    <p><strong>Invoice No:</strong> {{ invoice.invoice_no }}</p>
+    <p><strong>Invoice Date:</strong> {{ invoice.invoice_date }}</p>
+    <p><strong>Student:</strong> {{ invoice.student_code }} - {{ invoice.full_name }}</p>
+    <p><strong>Phone:</strong> {{ invoice.phone }}</p>
+    <p><strong>Status:</strong> {{ invoice.status }}</p>
+  </div>
+
+  <div class="card">
+    <p><strong>Subtotal:</strong> ₹ {{ "%.2f"|format(invoice.subtotal or 0) }}</p>
+    <p><strong>Total Discount:</strong> ₹ {{ "%.2f"|format(invoice.discount_amount or 0) }}</p>
+    <p><strong>Net Total:</strong> ₹ {{ "%.2f"|format(invoice.total_amount or 0) }}</p>
+    <p><strong>Paid Amount:</strong> ₹ {{ "%.2f"|format(total_paid or 0) }}</p>
+    <p><strong>Balance Amount:</strong> ₹ {{ "%.2f"|format(balance_amount or 0) }}</p>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Invoice Items</h3>
+  <table border="1" width="100%" cellpadding="10" class="billing-table">
+    <tr>
+      <th>Description</th>
+      <th>Qty</th>
+      <th>Unit Price</th>
+      <th>Line Total</th>
+    </tr>
+
+    {% for item in items %}
+    <tr>
+      <td>{{ item.description }}</td>
+      <td>{{ item.quantity }}</td>
+      <td>₹ {{ "%.2f"|format(item.unit_price or 0) }}</td>
+      <td>₹ {{ "%.2f"|format(item.line_total or 0) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h3>Installment Plan</h3>
+  <table border="1" width="100%" cellpadding="10" class="billing-table">
+    <tr>
+      <th>No</th>
+      <th>Due Date</th>
+      <th>Amount Due</th>
+      <th>Amount Paid</th>
+      <th>Status</th>
+      <th>Remarks</th>
+    </tr>
+
+    {% for ins in installments %}
+    <tr>
+      <td>{{ ins.installment_no }}</td>
+      <td>{{ ins.due_date }}</td>
+      <td>₹ {{ "%.2f"|format(ins.amount_due or 0) }}</td>
+      <td>₹ {{ "%.2f"|format(ins.amount_paid or 0) }}</td>
+      <td>{{ ins.status }}</td>
+      <td>{{ ins.remarks }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h3>Payments</h3>
+  <table border="1" width="100%" cellpadding="10" class="billing-table">
+    <tr>
+      <th>ID</th>
+      <th>Date</th>
+      <th>Amount</th>
+      <th>Mode</th>
+      <th>Reference No</th>
+      <th>Collected By</th>
+      <th>Notes</th>
+      <th>Receipt</th>
+    </tr>
+
+    {% for p in payments %}
+    <tr>
+      <td>{{ p.id }}</td>
+      <td>{{ p.payment_date }}</td>
+      <td>₹ {{ "%.2f"|format(p.amount_paid or 0) }}</td>
+      <td>{{ p.payment_mode }}</td>
+      <td>{{ p.reference_no }}</td>
+      <td>{{ p.collected_by_name }}</td>
+      <td>{{ p.notes }}</td>
+      <td>
+        <a href="{{ url_for('receipt_view', payment_id=p.id) }}">View Receipt</a>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="8" style="text-align:center;">No payments recorded yet.</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <div class="invoice-footer">
+
+  <div style="margin-top:40px; display:flex; justify-content:space-between;">
+
+    <div>
+      <p><strong>Prepared By:</strong> {{ session.get("full_name") }}</p>
+    </div>
+
+    <div style="text-align:center; min-width:200px;">
+      <br><br>
+      <hr>
+      <p>Authorized Signature</p>
+    </div>
+
+  </div>
+
+</div>
+</div>
+{% endblock %}

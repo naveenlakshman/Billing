@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-actions no-print">
+  <button class="btn btn-primary" onclick="window.print()">Print Receipt</button>
+  <a class="btn" href="{{ url_for('invoice_view', invoice_id=receipt.invoice_id) }}">Back to Invoice</a>
+</div>
+
+<div class="receipt-sheet">
+  <div class="receipt-header">
+    <h1>Global IT Education</h1>
+    <p>Billing Software Receipt</p>
+  </div>
+
+  <div class="receipt-title-row">
+    <h2>Payment Receipt</h2>
+    <div class="receipt-no-box">
+      <p><strong>Receipt No:</strong> {{ receipt.receipt_no }}</p>
+      <p><strong>Receipt Date:</strong> {{ receipt.receipt_date }}</p>
+    </div>
+  </div>
+
+  <div class="receipt-grid">
+    <div class="receipt-card">
+      <h3>Student Details</h3>
+      <p><strong>Student Code:</strong> {{ receipt.student_code }}</p>
+      <p><strong>Name:</strong> {{ receipt.full_name }}</p>
+      <p><strong>Phone:</strong> {{ receipt.phone or "-" }}</p>
+      <p><strong>Email:</strong> {{ receipt.email or "-" }}</p>
+    </div>
+
+    <div class="receipt-card">
+      <h3>Invoice Details</h3>
+      <p><strong>Invoice No:</strong> {{ receipt.invoice_no }}</p>
+      <p><strong>Invoice Date:</strong> {{ receipt.invoice_date }}</p>
+      <p><strong>Total Invoice Amount:</strong> ₹ {{ "%.2f"|format(total_invoice_amount or 0) }}</p>
+    </div>
+  </div>
+
+  <div class="receipt-card">
+    <h3>Payment Details</h3>
+    <table class="billing-table" width="100%">
+      <tr>
+        <th>Payment ID</th>
+        <th>Payment Date</th>
+        <th>Payment Mode</th>
+        <th>Reference No</th>
+        <th>Amount Received</th>
+      </tr>
+      <tr>
+        <td>{{ receipt.payment_id }}</td>
+        <td>{{ receipt.payment_date }}</td>
+        <td>{{ receipt.payment_mode }}</td>
+        <td>{{ receipt.reference_no or "-" }}</td>
+        <td>₹ {{ "%.2f"|format(amount_received or 0) }}</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="receipt-card">
+    <h3>Fee Summary</h3>
+    <div class="summary-line">
+      <span>Total Invoice Amount</span>
+      <strong>₹ {{ "%.2f"|format(total_invoice_amount or 0) }}</strong>
+    </div>
+    <div class="summary-line">
+      <span>Amount Received</span>
+      <strong>₹ {{ "%.2f"|format(amount_received or 0) }}</strong>
+    </div>
+    <div class="summary-line">
+      <span>Total Paid</span>
+      <strong>₹ {{ "%.2f"|format(total_paid or 0) }}</strong>
+    </div>
+    <div class="summary-line total-line">
+      <span>Balance Amount</span>
+      <strong>₹ {{ "%.2f"|format(balance_amount or 0) }}</strong>
+    </div>
+  </div>
+
+  <div class="receipt-card">
+    <h3>Amount in Words</h3>
+    <p><strong>{{ amount_in_words }}</strong></p>
+  </div>
+
+  <div class="receipt-card">
+    <h3>Notes</h3>
+    <p>{{ receipt.notes or "No notes." }}</p>
+  </div>
+
+  <div class="receipt-footer">
+    <div>
+      <p><strong>Collected By:</strong> {{ receipt.collected_by_name or "-" }}</p>
+    </div>
+
+    <div class="signature-box">
+      <p>Authorized Signature</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

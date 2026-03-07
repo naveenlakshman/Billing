@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Dashboard</h2>
+
+<div class="grid">
+  <div class="card stat-card">
+    <h3>Total Students</h3>
+    <p>{{ total_students }}</p>
+  </div>
+
+  <div class="card stat-card">
+    <h3>Total Courses</h3>
+    <p>{{ total_courses }}</p>
+  </div>
+
+  <div class="card stat-card">
+    <h3>Total Invoices</h3>
+    <p>{{ total_invoices }}</p>
+  </div>
+
+  <div class="card stat-card">
+    <h3>Total Collection</h3>
+    <p>₹ {{ "%.2f"|format(total_collection or 0) }}</p>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Welcome</h3>
+  <p>This is the starting dashboard for your billing software.</p>
+  <p>Next, we will build Students and Courses modules.</p>
+</div>
+{% endblock %}

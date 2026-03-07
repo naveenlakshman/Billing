@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Invoices</h2>
+
+<div class="page-actions">
+  <a class="btn btn-primary" href="{{ url_for('invoice_new') }}">Create Invoice</a>
+</div>
+
+<div class="card">
+  <form method="get" class="search-form">
+    <input
+      type="text"
+      name="search"
+      value="{{ search or '' }}"
+      placeholder="Search by invoice no, student name, or student code"
+    >
+    <button type="submit" class="btn btn-primary">Search</button>
+
+    {% if search %}
+    <a href="{{ url_for('invoices') }}" class="btn">Clear</a>
+    {% endif %}
+  </form>
+</div>
+
+<div class="card">
+  <table border="1" width="100%" cellpadding="10" class="billing-table">
+
+<tr>
+<th>ID</th>
+<th>Invoice No</th>
+<th>Student</th>
+<th>Date</th>
+<th>Total</th>
+<th>Paid</th>
+<th>Balance</th>
+<th>Status</th>
+<th>Action</th>
+</tr>
+
+{% for inv in invoices %}
+
+{% set balance = (inv.total_amount or 0) - (inv.paid_amount or 0) %}
+
+<tr>
+
+<td>{{ inv.id }}</td>
+
+<td>
+<a href="{{ url_for('invoice_view', invoice_id=inv.id) }}">
+{{ inv.invoice_no }}
+</a>
+</td>
+
+<td>
+<a href="{{ url_for('student_profile', student_id=inv.student_id) }}">
+{{ inv.student_code }} - {{ inv.full_name }}
+</a>
+</td>
+
+<td>{{ inv.invoice_date }}</td>
+
+<td>₹ {{ "%.2f"|format(inv.total_amount or 0) }}</td>
+
+<td style="color:green;">
+₹ {{ "%.2f"|format(inv.paid_amount or 0) }}
+</td>
+
+<td style="color:#c0392b;">
+₹ {{ "%.2f"|format(balance) }}
+</td>
+
+<td>{{ inv.status }}</td>
+
+<td>
+<a href="{{ url_for('invoice_view', invoice_id=inv.id) }}">View</a>
+</td>
+
+</tr>
+
+{% endfor %}
+
+</table>
+</div>
+{% endblock %}

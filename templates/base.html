@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Global IT Education - Billing Software</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select/dist/css/tom-select.css">
+  <script src="https://cdn.jsdelivr.net/npm/tom-select/dist/js/tom-select.complete.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Global IT Education</h1>
+      <p class="subtitle">Billing Software</p>
+    </div>
+
+    {% if session.get("user_id") %}
+      <div class="topbar-right">
+        <span>{{ session.get("full_name") }} ({{ session.get("role") }})</span>
+        <a class="btn btn-danger" href="{{ url_for('logout') }}">Logout</a>
+      </div>
+    {% endif %}
+  </header>
+
+  {% if session.get("user_id") %}
+  <nav class="navbar">
+    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('students') }}">Students</a>
+    <a href="{{ url_for('courses') }}">Courses</a>
+    <a href="{{ url_for('invoices') }}">Invoices</a>
+    <a href="{{ url_for('reports_center') }}">Reports</a>
+  </nav>
+  {% endif %}
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
