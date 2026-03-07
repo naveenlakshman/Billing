@@ -2,8 +2,8 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from werkzeug.security import check_password_hash
 from config import SECRET_KEY
 from db import init_db, get_conn
-from datetime import datetime
-
+import calendar
+from datetime import datetime, date
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
@@ -247,31 +247,315 @@ def dashboard():
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("SELECT COUNT(*) AS total FROM students")
-    total_students = cur.fetchone()["total"]
+    branch_id = request.args.get("branch_id", "").strip()
+    period = request.args.get("period", "this_fy").strip()
 
-    cur.execute("SELECT COUNT(*) AS total FROM courses")
-    total_courses = cur.fetchone()["total"]
+    today = date.today()
 
-    cur.execute("SELECT COUNT(*) AS total FROM invoices")
-    total_invoices = cur.fetchone()["total"]
+    def get_period_range(period_key):
+        year = today.year
+        month = today.month
 
+        # Indian financial year = Apr to Mar
+        if period_key == "this_fy":
+            if month >= 4:
+                start_date = date(year, 4, 1)
+                end_date = date(year + 1, 3, 31)
+            else:
+                start_date = date(year - 1, 4, 1)
+                end_date = date(year, 3, 31)
+
+        elif period_key == "last_fy":
+            if month >= 4:
+                start_date = date(year - 1, 4, 1)
+                end_date = date(year, 3, 31)
+            else:
+                start_date = date(year - 2, 4, 1)
+                end_date = date(year - 1, 3, 31)
+
+        elif period_key == "last_12_months":
+            first_day_this_month = date(today.year, today.month, 1)
+
+            start_year = first_day_this_month.year
+            start_month = first_day_this_month.month - 11
+            while start_month <= 0:
+                start_month += 12
+                start_year -= 1
+
+            start_date = date(start_year, start_month, 1)
+
+            end_year = first_day_this_month.year
+            end_month = first_day_this_month.month
+            last_day = calendar.monthrange(end_year, end_month)[1]
+            end_date = date(end_year, end_month, last_day)
+
+        else:
+            if month >= 4:
+                start_date = date(year, 4, 1)
+                end_date = date(year + 1, 3, 31)
+            else:
+                start_date = date(year - 1, 4, 1)
+                end_date = date(year, 3, 31)
+
+        return start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
+
+    start_date, end_date = get_period_range(period)
+
+    # Load branches
     cur.execute("""
-        SELECT IFNULL(SUM(amount_paid), 0) AS total_collection
-        FROM payments
+        SELECT *
+        FROM branches
+        WHERE is_active = 1
+        ORDER BY branch_name
     """)
-    total_collection = cur.fetchone()["total_collection"]
+    branches = cur.fetchall()
+
+    # Summary counts
+    student_query = "SELECT COUNT(*) AS total_students FROM students"
+    student_params = []
+
+    invoice_count_query = "SELECT COUNT(*) AS total_invoices FROM invoices"
+    invoice_count_params = []
+
+    sales_query = """
+        SELECT IFNULL(SUM(total_amount), 0) AS total_sales
+        FROM invoices
+        WHERE invoice_date BETWEEN ? AND ?
+    """
+    sales_params = [start_date, end_date]
+
+    receipt_query = """
+        SELECT IFNULL(SUM(amount_paid), 0) AS total_receipts
+        FROM payments
+        WHERE payment_date BETWEEN ? AND ?
+    """
+    receipt_params = [start_date, end_date]
+
+    expense_query = """
+        SELECT IFNULL(SUM(amount), 0) AS total_expenses
+        FROM expenses
+        WHERE expense_date BETWEEN ? AND ?
+    """
+    expense_params = [start_date, end_date]
+
+    if branch_id:
+        student_query += " WHERE branch_id = ?"
+        student_params.append(branch_id)
+
+        invoice_count_query += " WHERE branch_id = ?"
+        invoice_count_params.append(branch_id)
+
+        sales_query += " AND branch_id = ?"
+        sales_params.append(branch_id)
+
+        receipt_query += " AND branch_id = ?"
+        receipt_params.append(branch_id)
+
+        expense_query += " AND branch_id = ?"
+        expense_params.append(branch_id)
+
+    cur.execute(student_query, student_params)
+    total_students = int(cur.fetchone()["total_students"] or 0)
+
+    cur.execute(invoice_count_query, invoice_count_params)
+    total_invoices = int(cur.fetchone()["total_invoices"] or 0)
+
+    cur.execute(sales_query, sales_params)
+    total_sales = float(cur.fetchone()["total_sales"] or 0)
+
+    cur.execute(receipt_query, receipt_params)
+    total_receipts = float(cur.fetchone()["total_receipts"] or 0)
+
+    cur.execute(expense_query, expense_params)
+    total_expenses = float(cur.fetchone()["total_expenses"] or 0)
+
+    net_position = total_receipts - total_expenses
+
+    # -----------------------------
+    # Receivables Aging
+    # -----------------------------
+    aging_query = """
+        SELECT
+            installment_plans.due_date,
+            installment_plans.amount_due,
+            installment_plans.amount_paid
+        FROM installment_plans
+        JOIN invoices
+            ON installment_plans.invoice_id = invoices.id
+        WHERE (installment_plans.amount_due - installment_plans.amount_paid) > 0
+    """
+    aging_params = []
+
+    if branch_id:
+        aging_query += " AND invoices.branch_id = ?"
+        aging_params.append(branch_id)
+
+    cur.execute(aging_query, aging_params)
+    aging_rows = cur.fetchall()
+
+    current_amount = 0.0
+    bucket_1_15 = 0.0
+    bucket_16_30 = 0.0
+    bucket_31_45 = 0.0
+    bucket_above_45 = 0.0
+
+    for row in aging_rows:
+        due_date_str = row["due_date"]
+        due_date_obj = datetime.strptime(due_date_str, "%Y-%m-%d").date()
+        pending_amount = float(row["amount_due"] or 0) - float(row["amount_paid"] or 0)
+
+        if pending_amount <= 0:
+            continue
+
+        overdue_days = (today - due_date_obj).days
+
+        if overdue_days <= 0:
+            current_amount += pending_amount
+        elif 1 <= overdue_days <= 15:
+            bucket_1_15 += pending_amount
+        elif 16 <= overdue_days <= 30:
+            bucket_16_30 += pending_amount
+        elif 31 <= overdue_days <= 45:
+            bucket_31_45 += pending_amount
+        else:
+            bucket_above_45 += pending_amount
+
+    total_receivables = (
+        current_amount +
+        bucket_1_15 +
+        bucket_16_30 +
+        bucket_31_45 +
+        bucket_above_45
+    )
+
+    # -----------------------------
+    # Month buckets for chart
+    # -----------------------------
+    month_keys = []
+    month_labels = []
+
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+    y = start_dt.year
+    m = start_dt.month
+
+    while (y < end_dt.year) or (y == end_dt.year and m <= end_dt.month):
+        key = f"{y}-{m:02d}"
+        label = f"{calendar.month_abbr[m]} {y}"
+        month_keys.append(key)
+        month_labels.append(label)
+
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+
+    sales_map = {k: 0.0 for k in month_keys}
+    receipts_map = {k: 0.0 for k in month_keys}
+    expenses_map = {k: 0.0 for k in month_keys}
+
+    # Monthly sales
+    monthly_sales_query = """
+        SELECT
+            substr(invoice_date, 1, 7) AS ym,
+            IFNULL(SUM(total_amount), 0) AS total_amount
+        FROM invoices
+        WHERE invoice_date BETWEEN ? AND ?
+    """
+    monthly_sales_params = [start_date, end_date]
+
+    if branch_id:
+        monthly_sales_query += " AND branch_id = ?"
+        monthly_sales_params.append(branch_id)
+
+    monthly_sales_query += " GROUP BY substr(invoice_date, 1, 7)"
+
+    cur.execute(monthly_sales_query, monthly_sales_params)
+    for row in cur.fetchall():
+        ym = row["ym"]
+        if ym in sales_map:
+            sales_map[ym] = float(row["total_amount"] or 0)
+
+    # Monthly receipts
+    monthly_receipts_query = """
+        SELECT
+            substr(payment_date, 1, 7) AS ym,
+            IFNULL(SUM(amount_paid), 0) AS total_amount
+        FROM payments
+        WHERE payment_date BETWEEN ? AND ?
+    """
+    monthly_receipts_params = [start_date, end_date]
+
+    if branch_id:
+        monthly_receipts_query += " AND branch_id = ?"
+        monthly_receipts_params.append(branch_id)
+
+    monthly_receipts_query += " GROUP BY substr(payment_date, 1, 7)"
+
+    cur.execute(monthly_receipts_query, monthly_receipts_params)
+    for row in cur.fetchall():
+        ym = row["ym"]
+        if ym in receipts_map:
+            receipts_map[ym] = float(row["total_amount"] or 0)
+
+    # Monthly expenses
+    monthly_expenses_query = """
+        SELECT
+            substr(expense_date, 1, 7) AS ym,
+            IFNULL(SUM(amount), 0) AS total_amount
+        FROM expenses
+        WHERE expense_date BETWEEN ? AND ?
+    """
+    monthly_expenses_params = [start_date, end_date]
+
+    if branch_id:
+        monthly_expenses_query += " AND branch_id = ?"
+        monthly_expenses_params.append(branch_id)
+
+    monthly_expenses_query += " GROUP BY substr(expense_date, 1, 7)"
+
+    cur.execute(monthly_expenses_query, monthly_expenses_params)
+    for row in cur.fetchall():
+        ym = row["ym"]
+        if ym in expenses_map:
+            expenses_map[ym] = float(row["total_amount"] or 0)
+
+    sales_data = []
+    receipts_data = []
+    expenses_data = []
+
+    for key in month_keys:
+        sales_data.append(round(sales_map[key], 2))
+        receipts_data.append(round(receipts_map[key], 2))
+        expenses_data.append(round(expenses_map[key], 2))
 
     conn.close()
 
     return render_template(
         "dashboard.html",
+        branches=branches,
+        branch_id=branch_id,
+        period=period,
+        start_date=start_date,
+        end_date=end_date,
         total_students=total_students,
-        total_courses=total_courses,
         total_invoices=total_invoices,
-        total_collection=total_collection
+        total_sales=total_sales,
+        total_receipts=total_receipts,
+        total_expenses=total_expenses,
+        net_position=net_position,
+        total_receivables=total_receivables,
+        current_amount=current_amount,
+        bucket_1_15=bucket_1_15,
+        bucket_16_30=bucket_16_30,
+        bucket_31_45=bucket_31_45,
+        bucket_above_45=bucket_above_45,
+        month_labels=month_labels,
+        sales_data=sales_data,
+        receipts_data=receipts_data,
+        expenses_data=expenses_data
     )
-
 
 @app.route("/logout")
 def logout():
@@ -286,8 +570,13 @@ def students():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT * FROM students
-        ORDER BY id DESC
+        SELECT
+            students.*,
+            branches.branch_name
+        FROM students
+        LEFT JOIN branches
+            ON students.branch_id = branches.id
+        ORDER BY students.id DESC
     """)
 
     students = cur.fetchall()
@@ -301,15 +590,15 @@ from datetime import datetime
 @app.route("/student/new", methods=["GET", "POST"])
 @login_required
 def student_new():
-    if request.method == "POST":
+    conn = get_conn()
+    cur = conn.cursor()
 
+    if request.method == "POST":
+        branch_id = request.form["branch_id"]
         full_name = request.form["full_name"]
         phone = request.form["phone"]
-        email = request.form["email"]
-        address = request.form["address"]
-
-        conn = get_conn()
-        cur = conn.cursor()
+        email = request.form.get("email", "")
+        address = request.form.get("address", "")
 
         now = datetime.now().isoformat(timespec="seconds")
 
@@ -322,10 +611,11 @@ def student_new():
                 address,
                 joined_date,
                 status,
+                branch_id,
                 created_at,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             "TEMP",
             full_name,
@@ -334,12 +624,12 @@ def student_new():
             address,
             now,
             "active",
+            branch_id,
             now,
             now
         ))
 
         student_id = cur.lastrowid
-
         student_code = f"GIT-{str(student_id).zfill(4)}"
 
         cur.execute("""
@@ -352,10 +642,24 @@ def student_new():
         conn.close()
 
         flash("Student added successfully.", "success")
-
         return redirect(url_for("students"))
 
-    return render_template("student_form.html")
+    # GET request -> load branches for dropdown
+    cur.execute("""
+        SELECT *
+        FROM branches
+        WHERE is_active = 1
+        ORDER BY branch_name
+    """)
+    branches = cur.fetchall()
+
+    conn.close()
+
+    return render_template(
+        "student_form.html",
+        student=None,
+        branches=branches
+    )
 
 @app.route("/courses")
 @login_required
@@ -473,10 +777,20 @@ def invoice_new():
     cur = conn.cursor()
 
     # Load students and courses for dropdowns
-    cur.execute("SELECT * FROM students ORDER BY full_name ASC")
+    cur.execute("""
+        SELECT students.*, branches.branch_name
+        FROM students
+        LEFT JOIN branches ON students.branch_id = branches.id
+        ORDER BY students.full_name ASC
+    """)
     students = cur.fetchall()
 
-    cur.execute("SELECT * FROM courses WHERE is_active = 1 ORDER BY course_name ASC")
+    cur.execute("""
+        SELECT *
+        FROM courses
+        WHERE is_active = 1
+        ORDER BY course_name ASC
+    """)
     courses = cur.fetchall()
 
     if request.method == "POST":
@@ -503,6 +817,26 @@ def invoice_new():
                 conn.close()
                 return redirect(url_for("invoice_new"))
 
+            # Fetch student and branch
+            cur.execute("""
+                SELECT id, branch_id
+                FROM students
+                WHERE id = ?
+            """, (student_id,))
+            student = cur.fetchone()
+
+            if not student:
+                conn.close()
+                flash("Selected student not found.", "danger")
+                return redirect(url_for("invoice_new"))
+
+            branch_id = student["branch_id"]
+
+            if not branch_id:
+                conn.close()
+                flash("Selected student does not have a branch assigned.", "danger")
+                return redirect(url_for("invoice_new"))
+
             now = datetime.now().isoformat(timespec="seconds")
 
             invoice_items_to_save = []
@@ -527,18 +861,18 @@ def invoice_new():
                     continue
 
                 if not description:
-                    flash(f"Description is required in item row {i + 1}.", "danger")
                     conn.close()
+                    flash(f"Description is required in item row {i + 1}.", "danger")
                     return redirect(url_for("invoice_new"))
 
                 if qty <= 0:
-                    flash(f"Quantity must be greater than 0 in item row {i + 1}.", "danger")
                     conn.close()
+                    flash(f"Quantity must be greater than 0 in item row {i + 1}.", "danger")
                     return redirect(url_for("invoice_new"))
 
                 if rate < 0:
-                    flash(f"Rate cannot be negative in item row {i + 1}.", "danger")
                     conn.close()
+                    flash(f"Rate cannot be negative in item row {i + 1}.", "danger")
                     return redirect(url_for("invoice_new"))
 
                 gross = qty * rate
@@ -566,8 +900,8 @@ def invoice_new():
                 })
 
             if not invoice_items_to_save:
-                flash("Please enter at least one valid bill item.", "danger")
                 conn.close()
+                flash("Please enter at least one valid bill item.", "danger")
                 return redirect(url_for("invoice_new"))
 
             # Create invoice first
@@ -575,6 +909,7 @@ def invoice_new():
                 INSERT INTO invoices (
                     invoice_no,
                     student_id,
+                    branch_id,
                     invoice_date,
                     subtotal,
                     discount_type,
@@ -588,10 +923,11 @@ def invoice_new():
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 "TEMP",
                 student_id,
+                branch_id,
                 invoice_date,
                 subtotal,
                 "none",          # invoice-level discount not used now
@@ -771,17 +1107,35 @@ def invoice_view(invoice_id):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT invoices.*, students.student_code, students.full_name, students.phone, students.email, students.address
+        SELECT
+            invoices.*,
+            students.student_code,
+            students.full_name,
+            students.phone,
+            students.email,
+            students.address,
+            branches.branch_name
         FROM invoices
-        JOIN students ON invoices.student_id = students.id
+        JOIN students
+            ON invoices.student_id = students.id
+        LEFT JOIN branches
+            ON invoices.branch_id = branches.id
         WHERE invoices.id = ?
     """, (invoice_id,))
     invoice = cur.fetchone()
 
+    if not invoice:
+        conn.close()
+        flash("Invoice not found.", "danger")
+        return redirect(url_for("invoices"))
+
     cur.execute("""
-        SELECT invoice_items.*, courses.course_name
+        SELECT
+            invoice_items.*,
+            courses.course_name
         FROM invoice_items
-        LEFT JOIN courses ON invoice_items.course_id = courses.id
+        LEFT JOIN courses
+            ON invoice_items.course_id = courses.id
         WHERE invoice_items.invoice_id = ?
     """, (invoice_id,))
     items = cur.fetchall()
@@ -795,9 +1149,12 @@ def invoice_view(invoice_id):
     installments = cur.fetchall()
 
     cur.execute("""
-        SELECT payments.*, users.full_name AS collected_by_name
+        SELECT
+            payments.*,
+            users.full_name AS collected_by_name
         FROM payments
-        LEFT JOIN users ON payments.collected_by = users.id
+        LEFT JOIN users
+            ON payments.collected_by = users.id
         WHERE payments.invoice_id = ?
         ORDER BY payments.id DESC
     """, (invoice_id,))
@@ -905,9 +1262,16 @@ def payment_new(invoice_id):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT invoices.*, students.student_code, students.full_name
+        SELECT
+            invoices.*,
+            students.student_code,
+            students.full_name,
+            branches.branch_name
         FROM invoices
-        JOIN students ON invoices.student_id = students.id
+        JOIN students
+            ON invoices.student_id = students.id
+        LEFT JOIN branches
+            ON invoices.branch_id = branches.id
         WHERE invoices.id = ?
     """, (invoice_id,))
     invoice = cur.fetchone()
@@ -937,11 +1301,19 @@ def payment_new(invoice_id):
                 flash("Payment amount cannot be greater than balance amount.", "danger")
                 return redirect(url_for("payment_new", invoice_id=invoice_id))
 
+            branch_id = invoice["branch_id"]
+
+            if not branch_id:
+                conn.close()
+                flash("Invoice does not have a branch assigned.", "danger")
+                return redirect(url_for("invoice_view", invoice_id=invoice_id))
+
             now = datetime.now().isoformat(timespec="seconds")
 
             cur.execute("""
                 INSERT INTO payments (
                     invoice_id,
+                    branch_id,
                     payment_date,
                     amount_paid,
                     payment_mode,
@@ -950,9 +1322,10 @@ def payment_new(invoice_id):
                     collected_by,
                     created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 invoice_id,
+                branch_id,
                 payment_date,
                 amount_paid,
                 payment_mode,
@@ -1013,7 +1386,6 @@ def payment_new(invoice_id):
         summary=summary,
         today=today
     )
-
 @app.route("/receipt/<int:payment_id>")
 @login_required
 def receipt_view(payment_id):
@@ -1104,8 +1476,18 @@ def overdue_installments_report():
     cur = conn.cursor()
 
     today = datetime.today().strftime("%Y-%m-%d")
+    branch_id = request.args.get("branch_id", "").strip()
 
+    # Load branches for filter dropdown
     cur.execute("""
+        SELECT *
+        FROM branches
+        WHERE is_active = 1
+        ORDER BY branch_name
+    """)
+    branches = cur.fetchall()
+
+    query = """
         SELECT
             installment_plans.id,
             installment_plans.installment_no,
@@ -1119,23 +1501,37 @@ def overdue_installments_report():
             invoices.invoice_no,
             invoices.invoice_date,
             invoices.total_amount,
+            invoices.branch_id,
 
             students.id AS student_id,
             students.student_code,
             students.full_name,
             students.phone,
-            students.email
+            students.email,
+
+            branch_master.branch_name
 
         FROM installment_plans
         JOIN invoices
             ON installment_plans.invoice_id = invoices.id
         JOIN students
             ON invoices.student_id = students.id
+        LEFT JOIN branches AS branch_master
+            ON invoices.branch_id = branch_master.id
+
         WHERE installment_plans.due_date < ?
           AND installment_plans.status IN ('pending', 'partially_paid')
-        ORDER BY installment_plans.due_date ASC, students.full_name ASC
-    """, (today,))
+    """
 
+    params = [today]
+
+    if branch_id:
+        query += " AND invoices.branch_id = ? "
+        params.append(branch_id)
+
+    query += " ORDER BY installment_plans.due_date ASC, students.full_name ASC "
+
+    cur.execute(query, params)
     rows = cur.fetchall()
 
     total_overdue_count = len(rows)
@@ -1170,7 +1566,8 @@ def overdue_installments_report():
             "student_code": row["student_code"],
             "full_name": row["full_name"],
             "phone": row["phone"],
-            "email": row["email"]
+            "email": row["email"],
+            "branch_name": row["branch_name"]
         })
 
     conn.close()
@@ -1180,7 +1577,9 @@ def overdue_installments_report():
         rows=report_rows,
         total_overdue_count=total_overdue_count,
         total_overdue_amount=total_overdue_amount,
-        today=today
+        today=today,
+        branches=branches,
+        branch_id=branch_id
     )
 
 @app.route("/reports/today-collection")
@@ -1190,8 +1589,18 @@ def today_collection_report():
     cur = conn.cursor()
 
     today = datetime.today().strftime("%Y-%m-%d")
+    branch_id = request.args.get("branch_id", "").strip()
 
+    # Load branches for filter dropdown
     cur.execute("""
+        SELECT *
+        FROM branches
+        WHERE is_active = 1
+        ORDER BY branch_name
+    """)
+    branches = cur.fetchall()
+
+    query = """
         SELECT
             payments.id AS payment_id,
             payments.payment_date,
@@ -1199,6 +1608,7 @@ def today_collection_report():
             payments.payment_mode,
             payments.reference_no,
             payments.notes,
+            payments.branch_id,
 
             invoices.id AS invoice_id,
             invoices.invoice_no,
@@ -1210,7 +1620,8 @@ def today_collection_report():
 
             receipts.receipt_no,
 
-            users.full_name AS collected_by_name
+            users.full_name AS collected_by_name,
+            branch_master.branch_name
 
         FROM payments
         JOIN invoices
@@ -1221,11 +1632,21 @@ def today_collection_report():
             ON receipts.payment_id = payments.id
         LEFT JOIN users
             ON payments.collected_by = users.id
+        LEFT JOIN branches AS branch_master
+            ON payments.branch_id = branch_master.id
 
         WHERE payments.payment_date = ?
-        ORDER BY payments.id DESC
-    """, (today,))
+    """
 
+    params = [today]
+
+    if branch_id:
+        query += " AND payments.branch_id = ? "
+        params.append(branch_id)
+
+    query += " ORDER BY payments.id DESC "
+
+    cur.execute(query, params)
     rows = cur.fetchall()
 
     total_collection = 0.0
@@ -1262,7 +1683,9 @@ def today_collection_report():
         cash_total=cash_total,
         upi_total=upi_total,
         bank_total=bank_total,
-        card_total=card_total
+        card_total=card_total,
+        branches=branches,
+        branch_id=branch_id
     )
 
 @app.route("/reports/student-outstanding")
@@ -1271,18 +1694,41 @@ def student_outstanding_report():
     conn = get_conn()
     cur = conn.cursor()
 
-    # Student master rows
+    branch_id = request.args.get("branch_id", "").strip()
+
+    # Load branches for filter dropdown
     cur.execute("""
-        SELECT
-            id,
-            student_code,
-            full_name,
-            phone,
-            email,
-            status
-        FROM students
-        ORDER BY full_name ASC
+        SELECT *
+        FROM branches
+        WHERE is_active = 1
+        ORDER BY branch_name
     """)
+    branches = cur.fetchall()
+
+    student_query = """
+        SELECT
+            students.id,
+            students.student_code,
+            students.full_name,
+            students.phone,
+            students.email,
+            students.status,
+            students.branch_id,
+            branch_master.branch_name
+        FROM students
+        LEFT JOIN branches AS branch_master
+            ON students.branch_id = branch_master.id
+    """
+
+    params = []
+
+    if branch_id:
+        student_query += " WHERE students.branch_id = ? "
+        params.append(branch_id)
+
+    student_query += " ORDER BY students.full_name ASC "
+
+    cur.execute(student_query, params)
     students = cur.fetchall()
 
     rows = []
@@ -1325,6 +1771,7 @@ def student_outstanding_report():
             "phone": student["phone"],
             "email": student["email"],
             "status": student["status"],
+            "branch_name": student["branch_name"],
             "total_invoices": total_invoices,
             "total_billed": total_billed,
             "total_paid": total_paid,
@@ -1344,7 +1791,9 @@ def student_outstanding_report():
         total_students=total_students,
         total_billed=grand_total_billed,
         total_paid=grand_total_paid,
-        total_balance=grand_total_balance
+        total_balance=grand_total_balance,
+        branches=branches,
+        branch_id=branch_id
     )
 
 @app.route("/reports/unpaid-invoices")
@@ -1353,18 +1802,32 @@ def unpaid_invoices_report():
     conn = get_conn()
     cur = conn.cursor()
 
+    branch_id = request.args.get("branch_id", "").strip()
+
+    # Load branches for filter dropdown
     cur.execute("""
+        SELECT *
+        FROM branches
+        WHERE is_active = 1
+        ORDER BY branch_name
+    """)
+    branches = cur.fetchall()
+
+    query = """
         SELECT
             invoices.id,
             invoices.invoice_no,
             invoices.invoice_date,
             invoices.total_amount,
             invoices.status,
+            invoices.branch_id,
 
             students.id AS student_id,
             students.student_code,
             students.full_name,
             students.phone,
+
+            branch_master.branch_name,
 
             IFNULL(SUM(payments.amount_paid), 0) AS paid_amount
 
@@ -1373,13 +1836,24 @@ def unpaid_invoices_report():
             ON invoices.student_id = students.id
         LEFT JOIN payments
             ON payments.invoice_id = invoices.id
+        LEFT JOIN branches AS branch_master
+            ON invoices.branch_id = branch_master.id
 
         WHERE invoices.status IN ('unpaid', 'partially_paid')
+    """
 
+    params = []
+
+    if branch_id:
+        query += " AND invoices.branch_id = ? "
+        params.append(branch_id)
+
+    query += """
         GROUP BY invoices.id
         ORDER BY invoices.invoice_date ASC, invoices.id ASC
-    """)
+    """
 
+    cur.execute(query, params)
     raw_rows = cur.fetchall()
     conn.close()
 
@@ -1405,7 +1879,8 @@ def unpaid_invoices_report():
             "student_id": row["student_id"],
             "student_code": row["student_code"],
             "full_name": row["full_name"],
-            "phone": row["phone"]
+            "phone": row["phone"],
+            "branch_name": row["branch_name"]
         })
 
         total_invoices += 1
@@ -1419,7 +1894,9 @@ def unpaid_invoices_report():
         total_invoices=total_invoices,
         total_amount=total_amount,
         total_paid=total_paid,
-        total_balance=total_balance
+        total_balance=total_balance,
+        branches=branches,
+        branch_id=branch_id
     )
 
 @app.route("/reports/date-wise-collection", methods=["GET"])
@@ -1430,16 +1907,26 @@ def date_wise_collection_report():
 
     from_date = request.args.get("from_date", "").strip()
     to_date = request.args.get("to_date", "").strip()
+    branch_id = request.args.get("branch_id", "").strip()
 
     today = datetime.today().strftime("%Y-%m-%d")
 
-    # Default: today to today
+    # Default date range = today
     if not from_date:
         from_date = today
     if not to_date:
         to_date = today
 
+    # Load branches for filter dropdown
     cur.execute("""
+        SELECT *
+        FROM branches
+        WHERE is_active = 1
+        ORDER BY branch_name
+    """)
+    branches = cur.fetchall()
+
+    query = """
         SELECT
             payments.id AS payment_id,
             payments.payment_date,
@@ -1447,6 +1934,7 @@ def date_wise_collection_report():
             payments.payment_mode,
             payments.reference_no,
             payments.notes,
+            payments.branch_id,
 
             invoices.id AS invoice_id,
             invoices.invoice_no,
@@ -1458,7 +1946,8 @@ def date_wise_collection_report():
 
             receipts.receipt_no,
 
-            users.full_name AS collected_by_name
+            users.full_name AS collected_by_name,
+            branch_master.branch_name
 
         FROM payments
         JOIN invoices
@@ -1469,13 +1958,22 @@ def date_wise_collection_report():
             ON receipts.payment_id = payments.id
         LEFT JOIN users
             ON payments.collected_by = users.id
+        LEFT JOIN branches AS branch_master
+            ON payments.branch_id = branch_master.id
 
         WHERE payments.payment_date BETWEEN ? AND ?
-        ORDER BY payments.payment_date DESC, payments.id DESC
-    """, (from_date, to_date))
+    """
 
+    params = [from_date, to_date]
+
+    if branch_id:
+        query += " AND payments.branch_id = ? "
+        params.append(branch_id)
+
+    query += " ORDER BY payments.payment_date DESC, payments.id DESC "
+
+    cur.execute(query, params)
     rows = cur.fetchall()
-    conn.close()
 
     total_collection = 0.0
     total_payments = len(rows)
@@ -1500,11 +1998,15 @@ def date_wise_collection_report():
         elif mode == "card":
             card_total += amount
 
+    conn.close()
+
     return render_template(
         "report_date_wise_collection.html",
         rows=rows,
         from_date=from_date,
         to_date=to_date,
+        branch_id=branch_id,
+        branches=branches,
         total_collection=total_collection,
         total_payments=total_payments,
         cash_total=cash_total,
@@ -1627,6 +2129,294 @@ def course_wise_revenue_report():
         total_paid=grand_total_paid,
         total_balance=grand_total_balance
     )
+
+@app.route("/expenses")
+@login_required
+def expenses():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            expenses.*,
+            branches.branch_name,
+            expense_categories.category_name,
+            users.full_name AS created_by_name
+        FROM expenses
+        JOIN branches
+            ON expenses.branch_id = branches.id
+        JOIN expense_categories
+            ON expenses.category_id = expense_categories.id
+        LEFT JOIN users
+            ON expenses.created_by = users.id
+        ORDER BY expenses.expense_date DESC, expenses.id DESC
+    """)
+    expenses = cur.fetchall()
+
+    cur.execute("""
+        SELECT IFNULL(SUM(amount), 0) AS total_expense
+        FROM expenses
+    """)
+    total_expense = float(cur.fetchone()["total_expense"] or 0)
+
+    conn.close()
+
+    return render_template(
+        "expenses.html",
+        expenses=expenses,
+        total_expense=total_expense
+    )
+
+@app.route("/expense/new", methods=["GET", "POST"])
+@login_required
+def expense_new():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    if request.method == "POST":
+        expense_date = request.form["expense_date"]
+        branch_id = request.form["branch_id"]
+        category_id = request.form["category_id"]
+        title = request.form["title"].strip()
+        amount = float(request.form["amount"])
+        payment_mode = request.form["payment_mode"]
+        reference_no = request.form.get("reference_no", "").strip()
+        notes = request.form.get("notes", "").strip()
+
+        if not title:
+            conn.close()
+            flash("Expense title is required.", "danger")
+            return redirect(url_for("expense_new"))
+
+        if amount <= 0:
+            conn.close()
+            flash("Expense amount must be greater than 0.", "danger")
+            return redirect(url_for("expense_new"))
+
+        now = datetime.now().isoformat(timespec="seconds")
+
+        cur.execute("""
+            INSERT INTO expenses (
+                expense_date,
+                branch_id,
+                category_id,
+                title,
+                amount,
+                payment_mode,
+                reference_no,
+                notes,
+                created_by,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            expense_date,
+            branch_id,
+            category_id,
+            title,
+            amount,
+            payment_mode,
+            reference_no,
+            notes,
+            session["user_id"],
+            now,
+            now
+        ))
+
+        conn.commit()
+        conn.close()
+
+        flash("Expense recorded successfully.", "success")
+        return redirect(url_for("expenses"))
+
+    cur.execute("""
+        SELECT *
+        FROM branches
+        WHERE is_active = 1
+        ORDER BY branch_name
+    """)
+    branches = cur.fetchall()
+
+    cur.execute("""
+        SELECT *
+        FROM expense_categories
+        WHERE is_active = 1
+        ORDER BY category_name
+    """)
+    categories = cur.fetchall()
+
+    conn.close()
+    today = datetime.today().strftime("%Y-%m-%d")
+
+    return render_template(
+        "expense_form.html",
+        branches=branches,
+        categories=categories,
+        today=today
+    )
+
+@app.route("/expense-category/new", methods=["GET", "POST"])
+@login_required
+def expense_category_new():
+    if request.method == "POST":
+        category_name = request.form["category_name"].strip()
+        
+        if not category_name:
+            flash("Category name is required.", "danger")
+            return redirect(url_for("expense_category_new"))
+        
+        conn = get_conn()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            INSERT INTO expense_categories (category_name, is_active)
+            VALUES (?, 1)
+        """, (category_name,))
+        
+        conn.commit()
+        conn.close()
+        
+        flash("Expense category created successfully.", "success")
+        return redirect(url_for("expense_categories"))
+    
+    return render_template("expense_category_form.html")
+
+
+@app.route("/expense-categories")
+@login_required
+def expense_categories():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT *
+        FROM expense_categories
+        ORDER BY category_name
+    """)
+    categories = cur.fetchall()
+
+    conn.close()
+    return render_template("expense_categories.html", categories=categories)
+
+@app.route("/reports/expenses", methods=["GET"])
+@login_required
+def expenses_report():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    from_date = request.args.get("from_date", "").strip()
+    to_date = request.args.get("to_date", "").strip()
+    branch_id = request.args.get("branch_id", "").strip()
+
+    today = datetime.today().strftime("%Y-%m-%d")
+
+    if not from_date:
+        from_date = today
+    if not to_date:
+        to_date = today
+
+    # Load branches for filter dropdown
+    cur.execute("""
+        SELECT *
+        FROM branches
+        WHERE is_active = 1
+        ORDER BY branch_name
+    """)
+    branches = cur.fetchall()
+
+    query = """
+        SELECT
+            expenses.id,
+            expenses.expense_date,
+            expenses.branch_id,
+            expenses.category_id,
+            expenses.title,
+            expenses.amount,
+            expenses.payment_mode,
+            expenses.reference_no,
+            expenses.notes,
+            expenses.created_at,
+
+            branches.branch_name,
+            expense_categories.category_name,
+            users.full_name AS created_by_name
+
+        FROM expenses
+        JOIN branches
+            ON expenses.branch_id = branches.id
+        JOIN expense_categories
+            ON expenses.category_id = expense_categories.id
+        LEFT JOIN users
+            ON expenses.created_by = users.id
+
+        WHERE expenses.expense_date BETWEEN ? AND ?
+    """
+
+    params = [from_date, to_date]
+
+    if branch_id:
+        query += " AND expenses.branch_id = ? "
+        params.append(branch_id)
+
+    query += " ORDER BY expenses.expense_date DESC, expenses.id DESC "
+
+    cur.execute(query, params)
+    rows = cur.fetchall()
+
+    total_expense = 0.0
+    total_entries = len(rows)
+
+    cash_total = 0.0
+    upi_total = 0.0
+    bank_total = 0.0
+    card_total = 0.0
+
+    category_summary = {}
+
+    for row in rows:
+        amount = float(row["amount"] or 0)
+        total_expense += amount
+
+        mode = (row["payment_mode"] or "").lower()
+        if mode == "cash":
+            cash_total += amount
+        elif mode == "upi":
+            upi_total += amount
+        elif mode == "bank_transfer":
+            bank_total += amount
+        elif mode == "card":
+            card_total += amount
+
+        category_name = row["category_name"] or "Uncategorized"
+        if category_name not in category_summary:
+            category_summary[category_name] = 0.0
+        category_summary[category_name] += amount
+
+    category_rows = [
+        {"category_name": k, "amount": v}
+        for k, v in sorted(category_summary.items(), key=lambda x: x[1], reverse=True)
+    ]
+
+    conn.close()
+
+    return render_template(
+        "report_expenses.html",
+        rows=rows,
+        branches=branches,
+        branch_id=branch_id,
+        from_date=from_date,
+        to_date=to_date,
+        total_expense=total_expense,
+        total_entries=total_entries,
+        cash_total=cash_total,
+        upi_total=upi_total,
+        bank_total=bank_total,
+        card_total=card_total,
+        category_rows=category_rows
+    )
+
+
 
 if __name__ == "__main__":
     app.run(debug=True)
