@@ -249,6 +249,10 @@ def init_db():
         )
     """)
 
+    # ---------- STUDENT MIGRATIONS ----------
+    add_column_if_not_exists(cur, "students", "qualification", "TEXT")
+    add_column_if_not_exists(cur, "students", "employment_status", "TEXT DEFAULT 'unemployed'")
+
     # ---------- BRANCH MIGRATIONS ----------
     add_column_if_not_exists(cur, "users", "branch_id", "INTEGER")
     add_column_if_not_exists(cur, "users", "can_view_all_branches", "INTEGER NOT NULL DEFAULT 1")

@@ -18,6 +18,8 @@
       <th>Name</th>
       <th>Phone</th>
       <th>Email</th>
+      <th>Qualification</th>
+      <th>Employment Status</th>
       <th>Branch</th>
     </tr>
 
@@ -32,6 +34,8 @@
       </td>
       <td>{{ s.phone }}</td>
       <td>{{ s.email }}</td>
+      <td>{{ s.qualification or "-" }}</td>
+      <td>{{ s.employment_status or "-" }}</td>
       <td>{{ s.branch_name or "-" }}</td>
     </tr>
     {% endfor %}

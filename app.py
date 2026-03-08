@@ -644,6 +644,8 @@ def student_new():
         phone = request.form["phone"]
         email = request.form.get("email", "")
         address = request.form.get("address", "")
+        qualification = request.form.get("qualification", "")
+        employment_status = request.form.get("employment_status", "")
 
         now = datetime.now().isoformat(timespec="seconds")
 
@@ -654,19 +656,23 @@ def student_new():
                 phone,
                 email,
                 address,
+                qualification,
+                employment_status,
                 joined_date,
                 status,
                 branch_id,
                 created_at,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             "TEMP",
             full_name,
             phone,
             email,
             address,
+            qualification,
+            employment_status,
             now,
             "active",
             branch_id,
@@ -711,6 +717,88 @@ def student_new():
     return render_template(
         "student_form.html",
         student=None,
+        branches=branches
+    )
+
+
+@app.route("/student/<int:student_id>/edit", methods=["GET", "POST"])
+@login_required
+def student_edit(student_id):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # Fetch the student
+    cur.execute("""
+        SELECT *
+        FROM students
+        WHERE id = ?
+    """, (student_id,))
+    student = cur.fetchone()
+
+    if not student:
+        conn.close()
+        flash("Student not found.", "danger")
+        return redirect(url_for("students"))
+
+    if request.method == "POST":
+        full_name = request.form["full_name"]
+        phone = request.form["phone"]
+        email = request.form.get("email", "")
+        address = request.form.get("address", "")
+        qualification = request.form.get("qualification", "")
+        employment_status = request.form.get("employment_status", "")
+
+        now = datetime.now().isoformat(timespec="seconds")
+
+        cur.execute("""
+            UPDATE students
+            SET full_name = ?,
+                phone = ?,
+                email = ?,
+                address = ?,
+                qualification = ?,
+                employment_status = ?,
+                updated_at = ?
+            WHERE id = ?
+        """, (
+            full_name,
+            phone,
+            email,
+            address,
+            qualification,
+            employment_status,
+            now,
+            student_id
+        ))
+
+        conn.commit()
+        conn.close()
+
+        safe_log_activity(
+            user_id=session["user_id"],
+            branch_id=student["branch_id"],
+            action_type="update",
+            module_name="students",
+            record_id=student_id,
+            description=f"Updated student {full_name} ({student['student_code']})"
+        )
+
+        flash("Student updated successfully.", "success")
+        return redirect(url_for("student_profile", student_id=student_id))
+
+    cur.execute("""
+        SELECT *
+        FROM branches
+        WHERE is_active = 1
+        ORDER BY branch_name
+    """)
+    branches = cur.fetchall()
+
+    conn.close()
+
+    return render_template(
+        "student_form.html",
+        student=student,
         branches=branches
     )
 

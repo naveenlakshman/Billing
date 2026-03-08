@@ -2,7 +2,7 @@
 
 {% block content %}
 
-<h2>Add Student</h2>
+<h2>{% if student %}Edit Student{% else %}Add Student{% endif %}</h2>
 
 <div class="card">
 
@@ -21,22 +21,38 @@
 
   <div class="form-group">
     <label>Full Name</label>
-    <input type="text" name="full_name" required>
+    <input type="text" name="full_name" required {% if student %}value="{{ student.full_name }}"{% endif %}>
   </div>
 
   <div class="form-group">
     <label>Phone</label>
-    <input type="text" name="phone" required>
+    <input type="text" name="phone" required {% if student %}value="{{ student.phone }}"{% endif %}>
   </div>
 
   <div class="form-group">
     <label>Email</label>
-    <input type="email" name="email">
+    <input type="email" name="email" {% if student %}value="{{ student.email }}"{% endif %}>
   </div>
 
   <div class="form-group">
     <label>Address</label>
-    <textarea name="address"></textarea>
+    <textarea name="address">{% if student %}{{ student.address }}{% endif %}</textarea>
+  </div>
+
+  <div class="form-group">
+    <label>Qualification</label>
+    <input type="text" name="qualification" {% if student %}value="{{ student.qualification }}"{% endif %}>
+  </div>
+
+  <div class="form-group">
+    <label>Employment Status</label>
+    <select name="employment_status">
+      <option value="">-- Select --</option>
+      <option value="unemployed" {% if student and student.employment_status == 'unemployed' %}selected{% endif %}>Unemployed</option>
+      <option value="employed" {% if student and student.employment_status == 'employed' %}selected{% endif %}>Employed</option>
+      <option value="self_employed" {% if student and student.employment_status == 'self_employed' %}selected{% endif %}>Self-Employed</option>
+      <option value="student" {% if student and student.employment_status == 'student' %}selected{% endif %}>Student</option>
+    </select>
   </div>
 
   <button class="btn btn-primary">Save Student</button>

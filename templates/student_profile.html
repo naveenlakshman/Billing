@@ -4,6 +4,7 @@
 
 <div class="page-actions no-print">
   <a class="btn" href="{{ url_for('students') }}">Back to Students</a>
+  <a class="btn btn-primary" href="{{ url_for('student_edit', student_id=student.id) }}">Edit Student</a>
 </div>
 
 <h2>Student Profile</h2>
@@ -16,6 +17,8 @@
     <p><strong>Phone:</strong> {{ student.phone or "-" }}</p>
     <p><strong>Email:</strong> {{ student.email or "-" }}</p>
     <p><strong>Address:</strong> {{ student.address or "-" }}</p>
+    <p><strong>Qualification:</strong> {{ student.qualification or "-" }}</p>
+    <p><strong>Employment Status:</strong> {{ student.employment_status or "-" }}</p>
     <p><strong>Joined Date:</strong> {{ student.joined_date }}</p>
     <p><strong>Status:</strong> {{ student.status }}</p>
   </div>
