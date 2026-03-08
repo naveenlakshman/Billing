@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block title %}Import Invoices - Billing System{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="content-header">
+        <h1>Import Invoices</h1>
+        <p>Import invoices from CSV file</p>
+    </div>
+
+    {% if import_results %}
+        {% if import_results.success_count > 0 %}
+            <div class="alert alert-success">
+                <strong>Success!</strong> Imported {{ import_results.success_count }} invoice(s).
+            </div>
+        {% endif %}
+
+        {% if import_results.errors %}
+            <div class="alert alert-danger">
+                <strong>Import Errors:</strong> {{ import_results.errors|length }} row(s) had errors.
+            </div>
+            
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Row</th>
+                        <th>Error Message</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for error in import_results.errors %}
+                        <tr>
+                            <td>{{ error.row }}</td>
+                            <td>{{ error.message }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    {% endif %}
+
+    <div class="card">
+        <div class="card-header">
+            <h5>CSV Format</h5>
+        </div>
+        <div class="card-body">
+            <p><strong>Required columns:</strong></p>
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Column Name</th>
+                        <th>Description</th>
+                        <th>Example</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>student_reg_no</code></td>
+                        <td>Student's registration number</td>
+                        <td>1516239</td>
+                    </tr>
+                    <tr>
+                        <td><code>invoice_no</code></td>
+                        <td>Unique invoice number</td>
+                        <td>GIT/25/001</td>
+                    </tr>
+                    <tr>
+                        <td><code>invoice_date</code></td>
+                        <td>Invoice date (YYYY-MM-DD or DD Month YYYY)</td>
+                        <td>2025-09-20 or 20 September 2025</td>
+                    </tr>
+                    <tr>
+                        <td><code>course_name</code></td>
+                        <td>Exact name of course (must match existing course)</td>
+                        <td>ADVANCED DATA ANALYTICS AND AI FOR FINANCE</td>
+                    </tr>
+                    <tr>
+                        <td><code>total_fee</code></td>
+                        <td>Total course fee</td>
+                        <td>22500</td>
+                    </tr>
+                    <tr>
+                        <td><code>discount_amount</code></td>
+                        <td>Discount amount (optional, default 0)</td>
+                        <td>500</td>
+                    </tr>
+                    <tr>
+                        <td><code>notes</code></td>
+                        <td>Notes (optional)</td>
+                        <td>Early bird discount</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5>Available Courses</h5>
+        </div>
+        <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+            <p><small>Copy the exact course name from below when creating your CSV:</small></p>
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Course Name</th>
+                        <th>Type</th>
+                        <th>Fee</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for course in courses %}
+                        {% if course.is_active %}
+                            <tr>
+                                <td><code style="font-size: 0.85em;">{{ course.course_name }}</code></td>
+                                <td><span class="badge badge-{% if course.course_type == 'combo' %}warning{% else %}info{% endif %}">{{ course.course_type|upper }}</span></td>
+                                <td>{{ "%.2f"|format(course.fee) }}</td>
+                            </tr>
+                        {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5>Upload CSV File</h5>
+        </div>
+        <div class="card-body">
+            <form method="POST" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="csv_file">Select CSV File:</label>
+                    <input type="file" id="csv_file" name="csv_file" class="form-control" accept=".csv" required>
+                    <small class="form-text text-muted">File must be in CSV format</small>
+                </div>
+                <button type="submit" class="btn btn-primary">Import Invoices</button>
+                <a href="{{ url_for('import_center') }}" class="btn btn-secondary">Back</a>
+            </form>
+        </div>
+    </div>
+
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5>Download Sample Template</h5>
+        </div>
+        <div class="card-body">
+            <a href="{{ url_for('static', filename='sample_invoices.csv') }}" class="btn btn-info">
+                Download sample_invoices.csv
+            </a>
+        </div>
+    </div>
+</div>
+
+<style>
+.card {
+    margin-bottom: 20px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+}
+
+.card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #ddd;
+    padding: 15px;
+}
+
+.card-header h5 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.card-body {
+    padding: 15px;
+}
+
+.badge {
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+code {
+    background-color: #f4f4f4;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+}
+</style>
+{% endblock %}

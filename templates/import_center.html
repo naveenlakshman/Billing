@@ -26,6 +26,22 @@
     </a>
   </div>
 
+  <div class="card report-card">
+    <h3>Invoices</h3>
+    <p>Import invoice data from a CSV file. Links courses to students.</p>
+    <a class="btn btn-primary" href="{{ url_for('import_invoices_page') }}">
+      Import Invoices
+    </a>
+  </div>
+
+  <div class="card report-card">
+    <h3>Receipts</h3>
+    <p>Import receipt records from a CSV file. Records student payments for invoices.</p>
+    <a class="btn btn-primary" href="{{ url_for('import_receipts_page') }}">
+      Import Receipts
+    </a>
+  </div>
+
 </div>
 
 {% endblock %}

@@ -8,6 +8,25 @@ def get_conn():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
+    
+    # Register custom function to parse DD-MM-YYYY dates
+    def parse_ddmmyyyy(date_str):
+        """Parse DD-MM-YYYY formatted date string to YYYY-MM-DD for comparison"""
+        if not date_str:
+            return None
+        try:
+            # Handle DD-MM-YYYY format
+            if '-' in date_str:
+                parts = date_str.split('-')
+                if len(parts) == 3:
+                    day, month, year = parts
+                    # Return in YYYY-MM-DD format for easy comparison
+                    return f"{year}-{month}-{day}"
+        except:
+            pass
+        return date_str  # Return as-is if parsing fails
+    
+    conn.create_function("parse_date", 1, parse_ddmmyyyy)
     return conn
 
 def log_activity(user_id, branch_id, action_type, module_name, record_id, description):
@@ -44,7 +63,10 @@ def add_column_if_not_exists(cur, table_name, column_name, column_def):
     cur.execute(f"PRAGMA table_info({table_name})")
     columns = [row["name"] for row in cur.fetchall()]
     if column_name not in columns:
-        cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+        # Remove UNIQUE constraint for ALTER TABLE since it causes issues with NULL values
+        # SQLite doesn't allow adding UNIQUE constraints with existing NULL data
+        clean_def = column_def.replace(" UNIQUE", "").replace("UNIQUE ", "")
+        cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {clean_def}")
 
 
 def init_db():
@@ -158,35 +180,17 @@ def init_db():
         )
     """)
 
-    # ---------- PAYMENTS ----------
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS payments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            invoice_id INTEGER NOT NULL,
-            payment_date TEXT NOT NULL,
-            amount_paid REAL NOT NULL DEFAULT 0,
-            payment_mode TEXT NOT NULL
-                CHECK(payment_mode IN ('cash', 'upi', 'bank_transfer', 'card')),
-            reference_no TEXT,
-            notes TEXT,
-            collected_by INTEGER NOT NULL,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
-            FOREIGN KEY (collected_by) REFERENCES users(id)
-        )
-    """)
-
     # ---------- RECEIPTS ----------
     cur.execute("""
         CREATE TABLE IF NOT EXISTS receipts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             receipt_no TEXT NOT NULL UNIQUE,
-            payment_id INTEGER NOT NULL UNIQUE,
+            invoice_id INTEGER NOT NULL,
             receipt_date TEXT NOT NULL,
             amount_received REAL NOT NULL DEFAULT 0,
             created_by INTEGER NOT NULL,
             created_at TEXT NOT NULL,
-            FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE CASCADE,
+            FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
             FOREIGN KEY (created_by) REFERENCES users(id)
         )
     """)
@@ -255,13 +259,62 @@ def init_db():
     add_column_if_not_exists(cur, "students", "qualification", "TEXT")
     add_column_if_not_exists(cur, "students", "employment_status", "TEXT DEFAULT 'unemployed'")
 
+    # ---------- COURSE MIGRATIONS ----------
+    add_column_if_not_exists(cur, "courses", "course_type", "TEXT DEFAULT 'standard'")
+
+    # ---------- RECEIPTS MIGRATIONS ----------
+    # SQLite doesn't support DROP CONSTRAINT, so we need to recreate the table
+    # to make invoice_id required and payment_id removed
+    cur.execute("""
+        PRAGMA table_info(receipts)
+    """)
+    receipts_columns = {row[1]: row for row in cur.fetchall()}
+    
+    # Check if table exists and has payment_id column
+    if "payment_id" in receipts_columns:
+        # payment_id column exists, we need to recreate without it
+        try:
+            cur.execute("ALTER TABLE receipts RENAME TO receipts_old")
+            
+            # Create new receipts table without payment_id
+            cur.execute("""
+                CREATE TABLE receipts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    receipt_no TEXT NOT NULL UNIQUE,
+                    invoice_id INTEGER NOT NULL,
+                    receipt_date TEXT NOT NULL,
+                    amount_received REAL NOT NULL DEFAULT 0,
+                    created_by INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
+                    FOREIGN KEY (created_by) REFERENCES users(id)
+                )
+            """)
+            
+            # Copy data from old table
+            try:
+                cur.execute("""
+                    INSERT INTO receipts (id, receipt_no, invoice_id, receipt_date, amount_received, created_by, created_at)
+                    SELECT id, receipt_no, invoice_id, receipt_date, amount_received, created_by, created_at
+                    FROM receipts_old
+                """)
+            except:
+                pass
+            
+            # Drop old table
+            cur.execute("DROP TABLE IF EXISTS receipts_old")
+        except:
+            pass
+    else:
+        # Add invoice_id column if missing
+        add_column_if_not_exists(cur, "receipts", "invoice_id", "INTEGER")
+
     # ---------- BRANCH MIGRATIONS ----------
     add_column_if_not_exists(cur, "users", "branch_id", "INTEGER")
     add_column_if_not_exists(cur, "users", "can_view_all_branches", "INTEGER NOT NULL DEFAULT 1")
 
     add_column_if_not_exists(cur, "students", "branch_id", "INTEGER")
     add_column_if_not_exists(cur, "invoices", "branch_id", "INTEGER")
-    add_column_if_not_exists(cur, "payments", "branch_id", "INTEGER")
 
     # ---------- DEFAULT BRANCHES ----------
     cur.execute("SELECT id FROM branches WHERE branch_code = ?", ("HO",))
@@ -327,7 +380,6 @@ def init_db():
 
     cur.execute("UPDATE students SET branch_id = ? WHERE branch_id IS NULL", (head_office_id,))
     cur.execute("UPDATE invoices SET branch_id = ? WHERE branch_id IS NULL", (head_office_id,))
-    cur.execute("UPDATE payments SET branch_id = ? WHERE branch_id IS NULL", (head_office_id,))
 
     default_categories = [
         "Rent",
@@ -350,6 +402,39 @@ def init_db():
                 INSERT INTO expense_categories (category_name, is_active, created_at)
                 VALUES (?, ?, ?)
             """, (category_name, 1, now))
+
+    # ---------- RECALCULATE INVOICE STATUSES BASED ON RECEIPTS ----------
+    # This ensures invoices reflect the actual payment status from receipts
+    cur.execute("SELECT id, total_amount FROM invoices")
+    all_invoices = cur.fetchall()
+    
+    for invoice in all_invoices:
+        invoice_id = invoice['id']
+        total_amount = invoice['total_amount']
+        
+        # Calculate total receipts for this invoice
+        cur.execute("""
+            SELECT IFNULL(SUM(amount_received), 0) AS total_received
+            FROM receipts
+            WHERE invoice_id = ?
+        """, (invoice_id,))
+        receipt_result = cur.fetchone()
+        total_received = receipt_result['total_received'] if receipt_result['total_received'] else 0
+        
+        # Determine new status
+        if total_received >= total_amount:
+            new_status = 'paid'
+        elif total_received > 0:
+            new_status = 'partially_paid'
+        else:
+            new_status = 'unpaid'
+        
+        # Update invoice status
+        cur.execute("""
+            UPDATE invoices
+            SET status = ?, updated_at = ?
+            WHERE id = ?
+        """, (new_status, now, invoice_id))
 
     conn.commit()
     conn.close()

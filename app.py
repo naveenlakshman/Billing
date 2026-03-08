@@ -64,35 +64,7 @@ def safe_log_activity(user_id=None, branch_id=None, action_type="", module_name=
         print("Activity log error:", e)
 
 
-def get_invoice_payment_summary(invoice_id):
-    conn = get_conn()
-    cur = conn.cursor()
 
-    cur.execute("""
-        SELECT total_amount
-        FROM invoices
-        WHERE id = ?
-    """, (invoice_id,))
-    invoice = cur.fetchone()
-
-    cur.execute("""
-        SELECT IFNULL(SUM(amount_paid), 0) AS total_paid
-        FROM payments
-        WHERE invoice_id = ?
-    """, (invoice_id,))
-    paid_row = cur.fetchone()
-
-    conn.close()
-
-    total_amount = float(invoice["total_amount"]) if invoice else 0
-    total_paid = float(paid_row["total_paid"]) if paid_row else 0
-    balance = total_amount - total_paid
-
-    return {
-        "total_amount": total_amount,
-        "total_paid": total_paid,
-        "balance": balance
-    }
 
 
 def number_to_words_indian(amount):
@@ -200,54 +172,7 @@ def update_invoice_status(conn, invoice_id):
     ))
 
 
-def allocate_payment_to_installments(conn, invoice_id, payment_amount):
-    cur = conn.cursor()
 
-    remaining = float(payment_amount)
-
-    cur.execute("""
-        SELECT *
-        FROM installment_plans
-        WHERE invoice_id = ?
-        ORDER BY installment_no ASC, id ASC
-    """, (invoice_id,))
-    installments = cur.fetchall()
-
-    now = datetime.now().isoformat(timespec="seconds")
-
-    for ins in installments:
-        if remaining <= 0:
-            break
-
-        amount_due = float(ins["amount_due"] or 0)
-        amount_paid = float(ins["amount_paid"] or 0)
-        pending_amount = amount_due - amount_paid
-
-        if pending_amount <= 0:
-            continue
-
-        allocate = min(remaining, pending_amount)
-        new_paid = amount_paid + allocate
-
-        if new_paid <= 0:
-            status = "pending"
-        elif new_paid < amount_due:
-            status = "partially_paid"
-        else:
-            status = "paid"
-
-        cur.execute("""
-            UPDATE installment_plans
-            SET amount_paid = ?, status = ?, updated_at = ?
-            WHERE id = ?
-        """, (
-            new_paid,
-            status,
-            now,
-            ins["id"]
-        ))
-
-        remaining -= allocate
 
 
 @app.route("/")
@@ -370,17 +295,15 @@ def dashboard():
     invoice_count_query = "SELECT COUNT(*) AS total_invoices FROM invoices"
     invoice_count_params = []
 
-    sales_query = """
-        SELECT IFNULL(SUM(total_amount), 0) AS total_sales
-        FROM invoices
-        WHERE invoice_date BETWEEN ? AND ?
-    """
-    sales_params = [start_date, end_date]
+    # Sales query - sum ALL invoices (not filtered by date)
+    sales_query = "SELECT IFNULL(SUM(total_amount), 0) AS total_sales FROM invoices"
+    sales_params = []
 
     receipt_query = """
-        SELECT IFNULL(SUM(amount_paid), 0) AS total_receipts
-        FROM payments
-        WHERE payment_date BETWEEN ? AND ?
+        SELECT IFNULL(SUM(amount_received), 0) AS total_receipts
+        FROM receipts
+        JOIN invoices ON receipts.invoice_id = invoices.id
+        WHERE parse_date(receipts.receipt_date) BETWEEN ? AND ?
     """
     receipt_params = [start_date, end_date]
 
@@ -398,10 +321,10 @@ def dashboard():
         invoice_count_query += " WHERE branch_id = ?"
         invoice_count_params.append(branch_id)
 
-        sales_query += " AND branch_id = ?"
+        sales_query += " WHERE (branch_id = ? OR branch_id IS NULL)"
         sales_params.append(branch_id)
 
-        receipt_query += " AND branch_id = ?"
+        receipt_query += " AND (invoices.branch_id = ? OR invoices.branch_id IS NULL)"
         receipt_params.append(branch_id)
 
         expense_query += " AND branch_id = ?"
@@ -424,59 +347,79 @@ def dashboard():
 
     net_position = total_receipts - total_expenses
 
-    aging_query = """
-        SELECT
-            installment_plans.due_date,
-            installment_plans.amount_due,
-            installment_plans.amount_paid
-        FROM installment_plans
-        JOIN invoices
-            ON installment_plans.invoice_id = invoices.id
-        WHERE (installment_plans.amount_due - installment_plans.amount_paid) > 0
-    """
-    aging_params = []
-
-    if branch_id:
-        aging_query += " AND invoices.branch_id = ?"
-        aging_params.append(branch_id)
-
-    cur.execute(aging_query, aging_params)
-    aging_rows = cur.fetchall()
-
+    # Calculate aging buckets based on invoice_date
     current_amount = 0.0
     bucket_1_15 = 0.0
     bucket_16_30 = 0.0
     bucket_31_45 = 0.0
     bucket_above_45 = 0.0
-
+    
+    # Calculate receivables for ALL outstanding invoices (no date filter)
+    aging_query = """
+        SELECT
+            invoices.id,
+            invoices.invoice_date,
+            invoices.total_amount,
+            IFNULL(SUM(receipts.amount_received), 0) AS total_received
+        FROM invoices
+        LEFT JOIN receipts ON invoices.id = receipts.invoice_id
+        WHERE invoices.status IN ('unpaid', 'partially_paid')
+    """
+    aging_params = []
+    
+    if branch_id:
+        aging_query += " AND (invoices.branch_id = ? OR invoices.branch_id IS NULL)"
+        aging_params.append(branch_id)
+    
+    aging_query += " GROUP BY invoices.id"
+    
+    cur.execute(aging_query, aging_params)
+    aging_rows = cur.fetchall()
+    
     for row in aging_rows:
-        due_date_str = row["due_date"]
-        due_date_obj = datetime.strptime(due_date_str, "%Y-%m-%d").date()
-        pending_amount = float(row["amount_due"] or 0) - float(row["amount_paid"] or 0)
-
-        if pending_amount <= 0:
+        invoice_date_str = row["invoice_date"]
+        invoice_date_obj = None
+        
+        # Try to parse the date in multiple formats
+        try:
+            # Try YYYY-MM-DD format first
+            if len(invoice_date_str) == 10 and invoice_date_str[4] == '-':
+                invoice_date_obj = datetime.strptime(invoice_date_str, "%Y-%m-%d").date()
+            # Try "DD Month YYYY" format (e.g., "22 January 2026")
+            elif len(invoice_date_str) > 10:
+                invoice_date_obj = datetime.strptime(invoice_date_str, "%d %B %Y").date()
+            # Try "DD Mon YYYY" format (e.g., "22 Jan 2026")
+            elif len(invoice_date_str) > 8:
+                invoice_date_obj = datetime.strptime(invoice_date_str, "%d %b %Y").date()
+        except (ValueError, TypeError):
+            # If parsing fails, skip this row
             continue
-
-        overdue_days = (today - due_date_obj).days
-
+        
+        if not invoice_date_obj:
+            continue
+        
+        total_amount = float(row["total_amount"] or 0)
+        total_received = float(row["total_received"] or 0)
+        outstanding = total_amount - total_received
+        
+        if outstanding <= 0:
+            continue
+        
+        overdue_days = (today - invoice_date_obj).days
+        
         if overdue_days <= 0:
-            current_amount += pending_amount
+            current_amount += outstanding
         elif 1 <= overdue_days <= 15:
-            bucket_1_15 += pending_amount
+            bucket_1_15 += outstanding
         elif 16 <= overdue_days <= 30:
-            bucket_16_30 += pending_amount
+            bucket_16_30 += outstanding
         elif 31 <= overdue_days <= 45:
-            bucket_31_45 += pending_amount
+            bucket_31_45 += outstanding
         else:
-            bucket_above_45 += pending_amount
+            bucket_above_45 += outstanding
 
-    total_receivables = (
-        current_amount +
-        bucket_1_15 +
-        bucket_16_30 +
-        bucket_31_45 +
-        bucket_above_45
-    )
+    # Total receivables is the sum of all aging buckets
+    total_receivables = current_amount + bucket_1_15 + bucket_16_30 + bucket_31_45 + bucket_above_45
 
     month_keys = []
     month_labels = []
@@ -502,41 +445,63 @@ def dashboard():
     receipts_map = {k: 0.0 for k in month_keys}
     expenses_map = {k: 0.0 for k in month_keys}
 
+    # Monthly sales: cumulative sales by month (no date filter, show all invoices grouped by month)
     monthly_sales_query = """
         SELECT
-            substr(invoice_date, 1, 7) AS ym,
-            IFNULL(SUM(total_amount), 0) AS total_amount
+            invoice_date,
+            total_amount
         FROM invoices
-        WHERE invoice_date BETWEEN ? AND ?
     """
-    monthly_sales_params = [start_date, end_date]
+    monthly_sales_params = []
 
     if branch_id:
-        monthly_sales_query += " AND branch_id = ?"
+        monthly_sales_query += " WHERE branch_id = ?"
         monthly_sales_params.append(branch_id)
-
-    monthly_sales_query += " GROUP BY substr(invoice_date, 1, 7)"
 
     cur.execute(monthly_sales_query, monthly_sales_params)
     for row in cur.fetchall():
-        ym = row["ym"]
-        if ym in sales_map:
-            sales_map[ym] = float(row["total_amount"] or 0)
+        invoice_date_str = row["invoice_date"]
+        total_amount = float(row["total_amount"] or 0)
+        
+        # Try to parse the invoice date in various formats
+        ym = None
+        try:
+            # Try YYYY-MM-DD format first
+            if len(invoice_date_str) == 10 and invoice_date_str[4] == '-':
+                parsed = datetime.strptime(invoice_date_str, "%Y-%m-%d").date()
+                ym = f"{parsed.year}-{parsed.month:02d}"
+            # Try "DD Month YYYY" format (e.g., "22 January 2026")
+            elif len(invoice_date_str) > 10:
+                parsed = datetime.strptime(invoice_date_str, "%d %B %Y").date()
+                ym = f"{parsed.year}-{parsed.month:02d}"
+            # Try "DD Month YYYY" with short month (e.g., "22 Jan 2026")
+            elif len(invoice_date_str) > 8:
+                try:
+                    parsed = datetime.strptime(invoice_date_str, "%d %b %Y").date()
+                    ym = f"{parsed.year}-{parsed.month:02d}"
+                except ValueError:
+                    pass
+        except (ValueError, TypeError):
+            pass
+        
+        if ym and ym in sales_map:
+            sales_map[ym] = sales_map.get(ym, 0) + total_amount
 
     monthly_receipts_query = """
         SELECT
-            substr(payment_date, 1, 7) AS ym,
-            IFNULL(SUM(amount_paid), 0) AS total_amount
-        FROM payments
-        WHERE payment_date BETWEEN ? AND ?
+            SUBSTR(parse_date(receipts.receipt_date), 1, 7) AS ym,
+            IFNULL(SUM(receipts.amount_received), 0) AS total_amount
+        FROM receipts
+        JOIN invoices ON receipts.invoice_id = invoices.id
+        WHERE parse_date(receipts.receipt_date) BETWEEN ? AND ?
     """
     monthly_receipts_params = [start_date, end_date]
 
     if branch_id:
-        monthly_receipts_query += " AND branch_id = ?"
+        monthly_receipts_query += " AND invoices.branch_id = ?"
         monthly_receipts_params.append(branch_id)
 
-    monthly_receipts_query += " GROUP BY substr(payment_date, 1, 7)"
+    monthly_receipts_query += " GROUP BY SUBSTR(parse_date(receipts.receipt_date), 1, 7)"
 
     cur.execute(monthly_receipts_query, monthly_receipts_params)
     for row in cur.fetchall():
@@ -632,6 +597,7 @@ def students():
     # Get search and filter parameters
     search_query = request.args.get("search", "").strip()
     branch_filter = request.args.get("branch", "").strip()
+    status_filter = request.args.get("status", "").strip()
 
     # Build the base query
     query = """
@@ -661,6 +627,11 @@ def students():
         query += " AND students.branch_id = ?"
         params.append(branch_filter)
 
+    # Add status filter
+    if status_filter:
+        query += " AND students.status = ?"
+        params.append(status_filter)
+
     query += " ORDER BY students.id DESC"
 
     cur.execute(query, params)
@@ -682,7 +653,8 @@ def students():
         students=students,
         branches=branches,
         search_query=search_query,
-        branch_filter=branch_filter
+        branch_filter=branch_filter,
+        status_filter=status_filter
     )
 
 
@@ -975,14 +947,14 @@ def invoices():
         students.student_code,
         students.full_name,
         branches.branch_name,
-        IFNULL(SUM(payments.amount_paid), 0) AS paid_amount
+        IFNULL(SUM(receipts.amount_received), 0) AS paid_amount
     FROM invoices
     JOIN students
         ON invoices.student_id = students.id
     LEFT JOIN branches
         ON invoices.branch_id = branches.id
-    LEFT JOIN payments
-        ON payments.invoice_id = invoices.id
+    LEFT JOIN receipts
+        ON receipts.invoice_id = invoices.id
     """
 
     params = []
@@ -1177,7 +1149,32 @@ def invoice_new():
             ))
 
             invoice_id = cur.lastrowid
-            invoice_no = f"INV-{str(invoice_id).zfill(4)}"
+            
+            # Generate invoice number based on existing invoices (similar to student code)
+            # Try to extract prefix and next number from existing invoices
+            cur.execute("""
+                SELECT invoice_no FROM invoices 
+                WHERE invoice_no NOT LIKE 'INV-%' AND invoice_no NOT LIKE 'TEMP'
+                ORDER BY invoice_no DESC LIMIT 1
+            """)
+            result = cur.fetchone()
+            
+            if result and result["invoice_no"]:
+                existing_no = result["invoice_no"]
+                # Try to extract numeric part (e.g., "GIT/B/312" -> get 312)
+                try:
+                    parts = existing_no.split('/')
+                    if len(parts) >= 2:
+                        numeric_part = int(parts[-1])
+                        prefix = '/'.join(parts[:-1])  # Get "GIT/B"
+                        next_number = numeric_part + 1
+                        invoice_no = f"{prefix}/{next_number}"
+                    else:
+                        invoice_no = f"INV-{str(invoice_id).zfill(4)}"
+                except (ValueError, IndexError, TypeError):
+                    invoice_no = f"INV-{str(invoice_id).zfill(4)}"
+            else:
+                invoice_no = f"INV-{str(invoice_id).zfill(4)}"
 
             cur.execute("""
                 UPDATE invoices
@@ -1403,8 +1400,8 @@ def invoice_view(invoice_id):
     payments = cur.fetchall()
 
     cur.execute("""
-        SELECT IFNULL(SUM(amount_paid), 0) AS total_paid
-        FROM payments
+        SELECT IFNULL(SUM(amount_received), 0) AS total_paid
+        FROM receipts
         WHERE invoice_id = ?
     """, (invoice_id,))
     total_paid = float(cur.fetchone()["total_paid"] or 0)
@@ -1453,10 +1450,10 @@ def student_profile(student_id):
             invoices.invoice_date,
             invoices.total_amount,
             invoices.status,
-            IFNULL(SUM(payments.amount_paid), 0) AS paid_amount
+            IFNULL(SUM(receipts.amount_received), 0) AS paid_amount
         FROM invoices
-        LEFT JOIN payments
-            ON payments.invoice_id = invoices.id
+        LEFT JOIN receipts
+            ON receipts.invoice_id = invoices.id
         WHERE invoices.student_id = ?
         GROUP BY invoices.id
         ORDER BY invoices.id DESC
@@ -1474,10 +1471,10 @@ def student_profile(student_id):
 
     cur.execute("""
         SELECT
-            IFNULL(SUM(payments.amount_paid), 0) AS total_paid
-        FROM payments
+            IFNULL(SUM(receipts.amount_received), 0) AS total_paid
+        FROM receipts
         JOIN invoices
-            ON payments.invoice_id = invoices.id
+            ON receipts.invoice_id = invoices.id
         WHERE invoices.student_id = ?
     """, (student_id,))
     payment_summary = cur.fetchone()
@@ -1500,224 +1497,10 @@ def student_profile(student_id):
     )
 
 
-@app.route("/invoice/<int:invoice_id>/payment/new", methods=["GET", "POST"])
-@login_required
-def payment_new(invoice_id):
-    conn = get_conn()
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT
-            invoices.*,
-            students.student_code,
-            students.full_name,
-            branches.branch_name
-        FROM invoices
-        JOIN students
-            ON invoices.student_id = students.id
-        LEFT JOIN branches
-            ON invoices.branch_id = branches.id
-        WHERE invoices.id = ?
-    """, (invoice_id,))
-    invoice = cur.fetchone()
-
-    if not invoice:
-        conn.close()
-        flash("Invoice not found.", "danger")
-        return redirect(url_for("invoices"))
-
-    summary = get_invoice_payment_summary(invoice_id)
-
-    if request.method == "POST":
-        try:
-            payment_date = request.form["payment_date"].strip()
-            amount_paid = float(request.form["amount_paid"])
-            payment_mode = request.form["payment_mode"].strip()
-            reference_no = request.form.get("reference_no", "").strip()
-            notes = request.form.get("notes", "").strip()
-
-            if amount_paid <= 0:
-                conn.close()
-                flash("Payment amount must be greater than 0.", "danger")
-                return redirect(url_for("payment_new", invoice_id=invoice_id))
-
-            if amount_paid > summary["balance"]:
-                conn.close()
-                flash("Payment amount cannot be greater than balance amount.", "danger")
-                return redirect(url_for("payment_new", invoice_id=invoice_id))
-
-            branch_id = invoice["branch_id"]
-
-            if not branch_id:
-                conn.close()
-                flash("Invoice does not have a branch assigned.", "danger")
-                return redirect(url_for("invoice_view", invoice_id=invoice_id))
-
-            now = datetime.now().isoformat(timespec="seconds")
-
-            cur.execute("""
-                INSERT INTO payments (
-                    invoice_id,
-                    branch_id,
-                    payment_date,
-                    amount_paid,
-                    payment_mode,
-                    reference_no,
-                    notes,
-                    collected_by,
-                    created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                invoice_id,
-                branch_id,
-                payment_date,
-                amount_paid,
-                payment_mode,
-                reference_no,
-                notes,
-                session["user_id"],
-                now
-            ))
-
-            payment_id = cur.lastrowid
-            receipt_no = f"REC-{str(payment_id).zfill(4)}"
-
-            cur.execute("""
-                INSERT INTO receipts (
-                    receipt_no,
-                    payment_id,
-                    receipt_date,
-                    amount_received,
-                    created_by,
-                    created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                receipt_no,
-                payment_id,
-                payment_date,
-                amount_paid,
-                session["user_id"],
-                now
-            ))
-
-            allocate_payment_to_installments(conn, invoice_id, amount_paid)
-            update_invoice_status(conn, invoice_id)
-
-            conn.commit()
-            conn.close()
-
-            safe_log_activity(
-                user_id=session["user_id"],
-                branch_id=branch_id,
-                action_type="record_payment",
-                module_name="payments",
-                record_id=payment_id,
-                description=f"Recorded payment of ₹{amount_paid:.2f} for invoice {invoice['invoice_no']}"
-            )
-
-            flash("Payment recorded successfully.", "success")
-            return redirect(url_for("invoice_view", invoice_id=invoice_id))
-
-        except ValueError:
-            conn.rollback()
-            conn.close()
-            flash("Please enter valid payment amount.", "danger")
-            return redirect(url_for("payment_new", invoice_id=invoice_id))
-
-        except Exception as e:
-            conn.rollback()
-            conn.close()
-            flash(f"Error while recording payment: {str(e)}", "danger")
-            return redirect(url_for("payment_new", invoice_id=invoice_id))
-
-    conn.close()
-    today = datetime.today().strftime("%Y-%m-%d")
-    return render_template(
-        "payment_form.html",
-        invoice=invoice,
-        summary=summary,
-        today=today
-    )
 
 
-@app.route("/receipt/<int:payment_id>")
-@login_required
-def receipt_view(payment_id):
-    conn = get_conn()
-    cur = conn.cursor()
 
-    cur.execute("""
-        SELECT
-            receipts.receipt_no,
-            receipts.receipt_date,
-            receipts.amount_received,
-            receipts.created_at AS receipt_created_at,
 
-            payments.id AS payment_id,
-            payments.payment_date,
-            payments.amount_paid,
-            payments.payment_mode,
-            payments.reference_no,
-            payments.notes,
-
-            invoices.id AS invoice_id,
-            invoices.invoice_no,
-            invoices.invoice_date,
-            invoices.total_amount,
-
-            students.student_code,
-            students.full_name,
-            students.phone,
-            students.email,
-
-            users.full_name AS collected_by_name
-
-        FROM receipts
-        JOIN payments
-            ON receipts.payment_id = payments.id
-        JOIN invoices
-            ON payments.invoice_id = invoices.id
-        JOIN students
-            ON invoices.student_id = students.id
-        LEFT JOIN users
-            ON payments.collected_by = users.id
-        WHERE payments.id = ?
-    """, (payment_id,))
-
-    receipt = cur.fetchone()
-
-    if not receipt:
-        conn.close()
-        flash("Receipt not found.", "danger")
-        return redirect(url_for("invoices"))
-
-    cur.execute("""
-        SELECT IFNULL(SUM(amount_paid), 0) AS total_paid
-        FROM payments
-        WHERE invoice_id = ?
-    """, (receipt["invoice_id"],))
-    total_paid_row = cur.fetchone()
-
-    total_invoice_amount = float(receipt["total_amount"] or 0)
-    amount_received = float(receipt["amount_received"] or 0)
-    total_paid = float(total_paid_row["total_paid"] or 0)
-    balance_amount = total_invoice_amount - total_paid
-
-    conn.close()
-
-    amount_in_words = number_to_words_indian(amount_received)
-
-    return render_template(
-        "receipt_view.html",
-        receipt=receipt,
-        total_invoice_amount=total_invoice_amount,
-        amount_received=amount_received,
-        total_paid=total_paid,
-        balance_amount=balance_amount,
-        amount_in_words=amount_in_words
-    )
 
 
 @app.route("/reports")
@@ -3330,6 +3113,7 @@ def import_courses_page():
             for row in csv_reader:
                 try:
                     course_name = row.get('course_name', '').strip()
+                    course_type = row.get('course_type', 'standard').strip().lower()
                     duration = row.get('duration', '').strip()
                     fee = row.get('fee', '').strip()
                     
@@ -3341,6 +3125,10 @@ def import_courses_page():
                         })
                         row_num += 1
                         continue
+                    
+                    # Validate course_type
+                    if course_type not in ['standard', 'combo']:
+                        course_type = 'standard'
                     
                     # Check if course already exists
                     cur.execute("SELECT id FROM courses WHERE course_name = ?", (course_name,))
@@ -3370,15 +3158,17 @@ def import_courses_page():
                     cur.execute("""
                         INSERT INTO courses (
                             course_name,
+                            course_type,
                             duration,
                             fee,
                             is_active,
                             created_at,
                             updated_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, (
                         course_name,
+                        course_type,
                         duration,
                         fee,
                         1,
@@ -3413,6 +3203,386 @@ def import_courses_page():
     
     return render_template(
         "import_courses.html",
+        import_results=import_results
+    )
+
+
+@app.route("/admin/import/invoices", methods=["GET", "POST"])
+@login_required
+@admin_required
+def import_invoices_page():
+    import_results = None
+    
+    if request.method == "POST":
+        if 'csv_file' not in request.files:
+            flash("No file selected.", "danger")
+            return redirect(url_for("import_invoices_page"))
+        
+        file = request.files['csv_file']
+        
+        if file.filename == '':
+            flash("No file selected.", "danger")
+            return redirect(url_for("import_invoices_page"))
+        
+        if not file.filename.endswith('.csv'):
+            flash("Please upload a CSV file.", "danger")
+            return redirect(url_for("import_invoices_page"))
+        
+        try:
+            stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+            csv_reader = csv.DictReader(stream)
+            
+            if not csv_reader.fieldnames:
+                flash("CSV file is empty.", "danger")
+                return redirect(url_for("import_invoices_page"))
+            
+            conn = get_conn()
+            cur = conn.cursor()
+            
+            success_count = 0
+            errors = []
+            row_num = 2
+            now = datetime.now().isoformat(timespec="seconds")
+            admin_id = session["user_id"]
+            
+            for row in csv_reader:
+                try:
+                    student_reg_no = row.get('student_reg_no', '').strip()
+                    invoice_no = row.get('invoice_no', '').strip()
+                    invoice_date = row.get('invoice_date', '').strip()
+                    course_name = row.get('course_name', '').strip()
+                    total_fee = row.get('total_fee', '').strip()
+                    discount_amount = row.get('discount_amount', '0').strip()
+                    notes = row.get('notes', '').strip()
+                    
+                    # Validate required fields
+                    if not student_reg_no or not invoice_no or not invoice_date or not course_name or not total_fee:
+                        errors.append({
+                            'row': row_num,
+                            'message': 'Missing required field (student_reg_no, invoice_no, invoice_date, course_name, total_fee)'
+                        })
+                        row_num += 1
+                        continue
+                    
+                    # Check if invoice already exists
+                    cur.execute("SELECT id FROM invoices WHERE invoice_no = ?", (invoice_no,))
+                    if cur.fetchone():
+                        errors.append({
+                            'row': row_num,
+                            'message': f'Invoice {invoice_no} already exists'
+                        })
+                        row_num += 1
+                        continue
+                    
+                    # Find student by registration number
+                    cur.execute("SELECT id FROM students WHERE student_code = ?", (student_reg_no,))
+                    student = cur.fetchone()
+                    if not student:
+                        errors.append({
+                            'row': row_num,
+                            'message': f'Student with reg number {student_reg_no} not found'
+                        })
+                        row_num += 1
+                        continue
+                    student_id = student['id']
+                    
+                    # Find course by name
+                    cur.execute("SELECT id, fee FROM courses WHERE course_name = ? AND is_active = 1", (course_name,))
+                    course = cur.fetchone()
+                    if not course:
+                        errors.append({
+                            'row': row_num,
+                            'message': f'Course "{course_name}" not found or is inactive'
+                        })
+                        row_num += 1
+                        continue
+                    course_id = course['id']
+                    course_fee = course['fee']
+                    
+                    # Convert total_fee and discount_amount
+                    try:
+                        total_fee = float(total_fee)
+                        discount_amount = float(discount_amount) if discount_amount else 0
+                    except ValueError:
+                        errors.append({
+                            'row': row_num,
+                            'message': 'Invalid total_fee or discount_amount (must be numbers)'
+                        })
+                        row_num += 1
+                        continue
+                    
+                    # Calculate net amount
+                    subtotal = total_fee
+                    net_amount = subtotal - discount_amount
+                    
+                    # Determine discount type
+                    discount_type = 'fixed' if discount_amount > 0 else 'none'
+                    
+                    # Insert invoice
+                    cur.execute("""
+                        INSERT INTO invoices (
+                            invoice_no,
+                            student_id,
+                            invoice_date,
+                            subtotal,
+                            discount_type,
+                            discount_value,
+                            discount_amount,
+                            total_amount,
+                            installment_type,
+                            status,
+                            notes,
+                            created_by,
+                            created_at,
+                            updated_at,
+                            branch_id
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        invoice_no,
+                        student_id,
+                        invoice_date,
+                        subtotal,
+                        discount_type,
+                        discount_amount,
+                        discount_amount,
+                        net_amount,
+                        'full',
+                        'unpaid',
+                        notes,
+                        admin_id,
+                        now,
+                        now,
+                        session.get('branch_id', 1)
+                    ))
+                    
+                    invoice_id = cur.lastrowid
+                    
+                    # Insert invoice item
+                    cur.execute("""
+                        INSERT INTO invoice_items (
+                            invoice_id,
+                            course_id,
+                            description,
+                            quantity,
+                            unit_price,
+                            line_total,
+                            created_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        invoice_id,
+                        course_id,
+                        course_name,
+                        1,
+                        course_fee,
+                        course_fee,
+                        now
+                    ))
+                    
+                    success_count += 1
+                    
+                except Exception as e:
+                    errors.append({
+                        'row': row_num,
+                        'message': str(e)
+                    })
+                
+                row_num += 1
+            
+            conn.commit()
+            conn.close()
+            
+            import_results = {
+                'success_count': success_count,
+                'errors': errors
+            }
+            
+            if success_count > 0:
+                flash(f"Successfully imported {success_count} invoice(s).", "success")
+            
+        except Exception as e:
+            flash(f"Error processing file: {str(e)}", "danger")
+            return redirect(url_for("import_invoices_page"))
+    
+    # Fetch active courses for reference
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id, course_name, course_type, fee, is_active FROM courses WHERE is_active = 1 ORDER BY course_name")
+    courses = cur.fetchall()
+    conn.close()
+    
+    return render_template(
+        "import_invoices.html",
+        import_results=import_results,
+        courses=courses
+    )
+
+
+
+
+
+@app.route("/admin/import/receipts", methods=["GET", "POST"])
+@login_required
+@admin_required
+def import_receipts_page():
+    import_results = None
+    
+    if request.method == "POST":
+        if 'csv_file' not in request.files:
+            flash("No file selected.", "danger")
+            return redirect(url_for("import_receipts_page"))
+        
+        file = request.files['csv_file']
+        
+        if file.filename == '':
+            flash("No file selected.", "danger")
+            return redirect(url_for("import_receipts_page"))
+        
+        if not file.filename.endswith('.csv'):
+            flash("Please upload a CSV file.", "danger")
+            return redirect(url_for("import_receipts_page"))
+        
+        try:
+            stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+            csv_reader = csv.DictReader(stream)
+            
+            if not csv_reader.fieldnames:
+                flash("CSV file is empty.", "danger")
+                return redirect(url_for("import_receipts_page"))
+            
+            conn = get_conn()
+            cur = conn.cursor()
+            
+            success_count = 0
+            errors = []
+            row_num = 2
+            now = datetime.now().isoformat(timespec="seconds")
+            admin_id = session["user_id"]
+            
+            for row in csv_reader:
+                try:
+                    receipt_no = row.get('receipt_no', '').strip()
+                    invoice_number = row.get('invoice_number', '').strip()
+                    receipt_date = row.get('receipt_date', '').strip()
+                    amount_received = row.get('amount_received', '').strip()
+                    
+                    # Validate required fields
+                    if not receipt_no or not invoice_number or not receipt_date or not amount_received:
+                        errors.append({
+                            'row': row_num,
+                            'message': 'Missing required field (receipt_no, invoice_number, receipt_date, amount_received)'
+                        })
+                        row_num += 1
+                        continue
+                    
+                    # Check if receipt already exists
+                    cur.execute("SELECT id FROM receipts WHERE receipt_no = ?", (receipt_no,))
+                    if cur.fetchone():
+                        errors.append({
+                            'row': row_num,
+                            'message': f'Receipt {receipt_no} already exists'
+                        })
+                        row_num += 1
+                        continue
+                    
+                    # Find invoice by invoice_number
+                    cur.execute("SELECT id FROM invoices WHERE invoice_no = ?", (invoice_number,))
+                    invoice = cur.fetchone()
+                    
+                    if not invoice:
+                        errors.append({
+                            'row': row_num,
+                            'message': f'Invoice {invoice_number} not found'
+                        })
+                        row_num += 1
+                        continue
+                    
+                    invoice_id = invoice['id']
+                    
+                    # Convert amount_received
+                    try:
+                        amount_received = float(amount_received)
+                    except ValueError:
+                        errors.append({
+                            'row': row_num,
+                            'message': 'Invalid amount_received (must be a number)'
+                        })
+                        row_num += 1
+                        continue
+                    
+                    # Insert receipt linked to invoice
+                    cur.execute("""
+                        INSERT INTO receipts (
+                            receipt_no,
+                            invoice_id,
+                            receipt_date,
+                            amount_received,
+                            created_by,
+                            created_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (
+                        receipt_no,
+                        invoice_id,
+                        receipt_date,
+                        amount_received,
+                        admin_id,
+                        now
+                    ))
+                    
+                    # Update invoice status based on total receipts
+                    cur.execute("""
+                        SELECT SUM(amount_received) as total_received
+                        FROM receipts
+                        WHERE invoice_id = ?
+                    """, (invoice_id,))
+                    receipt_result = cur.fetchone()
+                    total_received = receipt_result['total_received'] if receipt_result['total_received'] else 0
+                    
+                    cur.execute("SELECT total_amount FROM invoices WHERE id = ?", (invoice_id,))
+                    invoice_total = cur.fetchone()['total_amount']
+                    
+                    if total_received >= invoice_total:
+                        new_status = 'paid'
+                    elif total_received > 0:
+                        new_status = 'partially_paid'
+                    else:
+                        new_status = 'unpaid'
+                    
+                    cur.execute("""
+                        UPDATE invoices
+                        SET status = ?, updated_at = ?
+                        WHERE id = ?
+                    """, (new_status, now, invoice_id))
+                    
+                    success_count += 1
+                    
+                except Exception as e:
+                    errors.append({
+                        'row': row_num,
+                        'message': str(e)
+                    })
+                
+                row_num += 1
+            
+            conn.commit()
+            conn.close()
+            
+            import_results = {
+                'success_count': success_count,
+                'errors': errors
+            }
+            
+            if success_count > 0:
+                flash(f"Successfully imported {success_count} receipt(s).", "success")
+            
+        except Exception as e:
+            flash(f"Error processing file: {str(e)}", "danger")
+            return redirect(url_for("import_receipts_page"))
+    
+    return render_template(
+        "import_receipts.html",
         import_results=import_results
     )
 
