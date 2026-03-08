@@ -2,44 +2,214 @@
 
 {% block content %}
 
-<h2>Students</h2>
+<style>
+  .search-filter-section {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 20px;
+    margin-bottom: 25px;
+  }
 
-<a class="btn btn-primary" href="{{ url_for('student_new') }}">
-  Add Student
-</a>
+  .search-filter-form {
+    display: grid;
+    grid-template-columns: 1fr 250px auto;
+    gap: 15px;
+    align-items: flex-end;
+    margin-bottom: 15px;
+  }
 
-<br><br>
+  .form-group-inline {
+    display: flex;
+    flex-direction: column;
+  }
 
+  .form-group-inline label {
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: #333;
+    font-size: 14px;
+  }
+
+  .form-group-inline input,
+  .form-group-inline select {
+    padding: 9px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+
+  .form-group-inline input:focus,
+  .form-group-inline select:focus {
+    outline: none;
+    border-color: #2c3e50;
+    box-shadow: 0 0 0 2px rgba(44, 62, 80, 0.1);
+  }
+
+  .search-hint {
+    color: #888;
+    font-size: 12px;
+    margin-top: 4px;
+  }
+
+  .button-group {
+    display: flex;
+    gap: 8px;
+  }
+
+  .button-group .btn {
+    padding: 9px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .filters-applied {
+    background-color: #e8f4f8;
+    border-left: 4px solid #2c3e50;
+    padding: 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #333;
+  }
+
+  .filters-applied strong {
+    color: #2c3e50;
+  }
+
+  .results-count {
+    margin-bottom: 15px;
+    font-size: 14px;
+    color: #666;
+    padding: 8px 0;
+  }
+
+  @media (max-width: 1200px) {
+    .search-filter-form {
+      grid-template-columns: 1fr;
+      gap: 15px;
+    }
+
+    .button-group {
+      justify-content: flex-start;
+    }
+  }
+</style>
+
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+  <h2 style="margin: 0;">Students</h2>
+  <a class="btn btn-primary" href="{{ url_for('student_new') }}" style="padding: 10px 20px; font-weight: 500;">
+    + Add Student
+  </a>
+</div>
+
+<!-- Search and Filter Section -->
+<div class="search-filter-section">
+  <form method="get">
+    <div class="search-filter-form">
+      <div class="form-group-inline">
+        <label for="search">Search Students</label>
+        <input type="text" id="search" name="search" placeholder="Name, phone, email, or reg number" 
+               value="{{ search_query }}">
+        <span class="search-hint">Search in name, phone, email, or registration number</span>
+      </div>
+
+      <div class="form-group-inline">
+        <label for="branch">Branch</label>
+        <select id="branch" name="branch">
+          <option value="">All Branches</option>
+          {% for b in branches %}
+            <option value="{{ b.id }}" {% if branch_filter|int == b.id %}selected{% endif %}>
+              {{ b.branch_code }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="button-group">
+        <button type="submit" class="btn btn-primary">Search</button>
+        <a href="{{ url_for('students') }}" class="btn" style="background-color: #6c757d; color: white;">Reset</a>
+      </div>
+    </div>
+
+    {% if search_query or branch_filter %}
+      <div class="filters-applied">
+        <strong>Active Filters:</strong>
+        {% if search_query %}
+          Search: <strong>"{{ search_query }}"</strong>
+        {% endif %}
+        {% if branch_filter %}
+          {% if search_query %} • {% endif %}
+          Branch: <strong>{{ branches | selectattr('id', 'equalto', branch_filter|int) | map(attribute='branch_name') | join(', ') }}</strong>
+        {% endif %}
+      </div>
+    {% endif %}
+  </form>
+</div>
+
+<!-- Results Count -->
+<div class="results-count">
+  📊 <strong>{{ students | length }}</strong> student(s) found
+</div>
+
+<!-- Students Table -->
 <div class="card">
-  <table border="1" width="100%" cellpadding="10" class="billing-table">
-    <tr>
-      <th>ID</th>
-      <th>Student Code</th>
-      <th>Name</th>
-      <th>Phone</th>
-      <th>Email</th>
-      <th>Qualification</th>
-      <th>Employment Status</th>
-      <th>Branch</th>
-    </tr>
-
-    {% for s in students %}
-    <tr>
-      <td>{{ s.id }}</td>
-      <td>{{ s.student_code }}</td>
-      <td>
-        <a href="{{ url_for('student_profile', student_id=s.id) }}">
-          {{ s.full_name }}
-        </a>
-      </td>
-      <td>{{ s.phone }}</td>
-      <td>{{ s.email }}</td>
-      <td>{{ s.qualification or "-" }}</td>
-      <td>{{ s.employment_status or "-" }}</td>
-      <td>{{ s.branch_name or "-" }}</td>
-    </tr>
-    {% endfor %}
-  </table>
+  {% if students %}
+    <table border="1" width="100%" cellpadding="10" class="billing-table">
+      <thead>
+        <tr style="background-color: #f5f6f7;">
+          <th>ID</th>
+          <th>Reg. No</th>
+          <th>Name</th>
+          <th>Phone</th>
+          <th>Gender</th>
+          <th>Email</th>
+          <th>Education</th>
+          <th>Qualification</th>
+          <th>Status</th>
+          <th>Branch</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in students %}
+        <tr style="{% if loop.index % 2 == 0 %}background-color: #f9f9f9;{% endif %}">
+          <td style="text-align: center; font-weight: 500;">{{ s.id }}</td>
+          <td style="font-weight: 500; color: #2c3e50;">{{ s.student_code }}</td>
+          <td>
+            <a href="{{ url_for('student_profile', student_id=s.id) }}" style="color: #0056b3; text-decoration: none; font-weight: 500;">
+              {{ s.full_name }}
+            </a>
+          </td>
+          <td>{{ s.phone }}</td>
+          <td style="text-align: center;">{{ s.gender or "—" }}</td>
+          <td style="font-size: 13px; color: #666;">{{ s.email or "—" }}</td>
+          <td>{{ s.education_level or "—" }}</td>
+          <td>{{ s.qualification or "—" }}</td>
+          <td>
+            <span style="padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;
+              {% if s.employment_status == 'student' %}
+                background-color: #d1ecf1; color: #0c5460;
+              {% elif s.employment_status == 'employed' %}
+                background-color: #d4edda; color: #155724;
+              {% else %}
+                background-color: #f8d7da; color: #721c24;
+              {% endif %}
+            ">
+              {{ s.employment_status or "—" }}
+            </span>
+          </td>
+          <td style="font-size: 13px;">{{ s.branch_name or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div style="padding: 40px; text-align: center; color: #999;">
+      <p style="font-size: 16px; margin: 0;">🔍 No students found matching your search criteria.</p>
+      <p style="font-size: 13px; margin: 8px 0 0 0;">Try adjusting your search or filters</p>
+    </div>
+  {% endif %}
 </div>
 
 {% endblock %}

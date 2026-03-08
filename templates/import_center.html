@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2>Data Import Center</h2>
+
+<div class="card">
+  <p>Import data from CSV files. Select the data type you want to import.</p>
+</div>
+
+<div class="report-grid">
+
+  <div class="card report-card">
+    <h3>Students</h3>
+    <p>Import multiple students from a CSV file.</p>
+    <a class="btn btn-primary" href="{{ url_for('import_students_page') }}">
+      Import Students
+    </a>
+  </div>
+
+  <div class="card report-card">
+    <h3>Courses</h3>
+    <p>Import multiple courses from a CSV file.</p>
+    <a class="btn btn-primary" href="{{ url_for('import_courses_page') }}">
+      Import Courses
+    </a>
+  </div>
+
+</div>
+
+{% endblock %}

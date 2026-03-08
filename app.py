@@ -6,12 +6,25 @@ import calendar
 from datetime import datetime, date
 from functools import wraps
 from werkzeug.security import generate_password_hash
+import json
+import csv
+import io
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
 # Create database and tables when app starts
 init_db()
+
+# Qualification levels mapping
+QUALIFICATION_LEVELS = {
+    'School': ['5th Std', '6th Std', '7th Std', '8th Std', '9th Std', 'SSLC'],
+    'Pre-University': ['PUC'],
+    'Diploma': ['Diploma'],
+    'Technical': ['ITI'],
+    'Undergraduate': ['BA', 'BCom', 'BBA', 'BCA', 'BSc', 'BBM', 'BE', 'B.Ed', 'LLB'],
+    'Postgraduate': ['MA', 'MBA', 'MCom', 'Masters']
+}
 
 
 def login_required(route_function):
@@ -616,20 +629,67 @@ def students():
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("""
+    # Get search and filter parameters
+    search_query = request.args.get("search", "").strip()
+    branch_filter = request.args.get("branch", "").strip()
+
+    # Build the base query
+    query = """
         SELECT
             students.*,
             branches.branch_name
         FROM students
         LEFT JOIN branches
             ON students.branch_id = branches.id
-        ORDER BY students.id DESC
-    """)
+        WHERE 1=1
+    """
+    params = []
 
+    # Add search filter (search in name, phone, email, student_code)
+    if search_query:
+        query += """ AND (
+            students.full_name LIKE ? OR
+            students.phone LIKE ? OR
+            students.email LIKE ? OR
+            students.student_code LIKE ?
+        )"""
+        search_param = f"%{search_query}%"
+        params.extend([search_param, search_param, search_param, search_param])
+
+    # Add branch filter
+    if branch_filter:
+        query += " AND students.branch_id = ?"
+        params.append(branch_filter)
+
+    query += " ORDER BY students.id DESC"
+
+    cur.execute(query, params)
     students = cur.fetchall()
+
+    # Get all branches for the filter dropdown
+    cur.execute("""
+        SELECT id, branch_name, branch_code
+        FROM branches
+        WHERE is_active = 1
+        ORDER BY branch_name
+    """)
+    branches = cur.fetchall()
+
     conn.close()
 
-    return render_template("students.html", students=students)
+    return render_template(
+        "students.html",
+        students=students,
+        branches=branches,
+        search_query=search_query,
+        branch_filter=branch_filter
+    )
+
+
+@app.route("/api/qualifications/<education_level>")
+def get_qualifications(education_level):
+    qualifications = QUALIFICATION_LEVELS.get(education_level, [])
+    return json.dumps(qualifications)
 
 
 @app.route("/student/new", methods=["GET", "POST"])
@@ -642,10 +702,28 @@ def student_new():
         branch_id = request.form["branch_id"]
         full_name = request.form["full_name"]
         phone = request.form["phone"]
+        gender = request.form.get("gender", "")
         email = request.form.get("email", "")
         address = request.form.get("address", "")
+        education_level = request.form.get("education_level", "")
         qualification = request.form.get("qualification", "")
         employment_status = request.form.get("employment_status", "")
+        status = request.form.get("status", "active")
+
+        # Get the next registration number
+        # Fetch all student codes and find max numeric value
+        cur.execute("SELECT student_code FROM students ORDER BY CAST(student_code AS INTEGER) DESC LIMIT 1")
+        result = cur.fetchone()
+        if result and result["student_code"]:
+            try:
+                max_reg = int(result["student_code"])
+                next_reg_no = max_reg + 1
+            except (ValueError, TypeError):
+                max_reg = 1515000
+                next_reg_no = max_reg + 1
+        else:
+            max_reg = 1515000
+            next_reg_no = max_reg + 1
 
         now = datetime.now().isoformat(timespec="seconds")
 
@@ -654,8 +732,10 @@ def student_new():
                 student_code,
                 full_name,
                 phone,
+                gender,
                 email,
                 address,
+                education_level,
                 qualification,
                 employment_status,
                 joined_date,
@@ -664,31 +744,25 @@ def student_new():
                 created_at,
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            "TEMP",
+            str(next_reg_no),
             full_name,
             phone,
+            gender,
             email,
             address,
+            education_level,
             qualification,
             employment_status,
             now,
-            "active",
+            status,
             branch_id,
             now,
             now
         ))
 
         student_id = cur.lastrowid
-        student_code = f"GIT-{str(student_id).zfill(4)}"
-
-        cur.execute("""
-            UPDATE students
-            SET student_code = ?
-            WHERE id = ?
-        """, (student_code, student_id))
-
         conn.commit()
         conn.close()
 
@@ -698,7 +772,7 @@ def student_new():
             action_type="create",
             module_name="students",
             record_id=student_id,
-            description=f"Created student {full_name} ({student_code})"
+            description=f"Created student {full_name} (Reg No: {next_reg_no})"
         )
 
         flash("Student added successfully.", "success")
@@ -717,7 +791,9 @@ def student_new():
     return render_template(
         "student_form.html",
         student=None,
-        branches=branches
+        branches=branches,
+        education_levels=QUALIFICATION_LEVELS.keys(),
+        qualification_levels=QUALIFICATION_LEVELS
     )
 
 
@@ -743,10 +819,13 @@ def student_edit(student_id):
     if request.method == "POST":
         full_name = request.form["full_name"]
         phone = request.form["phone"]
+        gender = request.form.get("gender", "")
         email = request.form.get("email", "")
         address = request.form.get("address", "")
+        education_level = request.form.get("education_level", "")
         qualification = request.form.get("qualification", "")
         employment_status = request.form.get("employment_status", "")
+        status = request.form.get("status", "active")
 
         now = datetime.now().isoformat(timespec="seconds")
 
@@ -754,19 +833,25 @@ def student_edit(student_id):
             UPDATE students
             SET full_name = ?,
                 phone = ?,
+                gender = ?,
                 email = ?,
                 address = ?,
+                education_level = ?,
                 qualification = ?,
                 employment_status = ?,
+                status = ?,
                 updated_at = ?
             WHERE id = ?
         """, (
             full_name,
             phone,
+            gender,
             email,
             address,
+            education_level,
             qualification,
             employment_status,
+            status,
             now,
             student_id
         ))
@@ -799,7 +884,9 @@ def student_edit(student_id):
     return render_template(
         "student_form.html",
         student=student,
-        branches=branches
+        branches=branches,
+        education_levels=QUALIFICATION_LEVELS.keys(),
+        qualification_levels=QUALIFICATION_LEVELS
     )
 
 
@@ -2959,6 +3046,375 @@ def user_toggle_status(user_id):
     flash(f"User {action_word} successfully.", "success")
     return redirect(url_for("users"))
 
+
+# ============ IMPORT ROUTES ============
+
+@app.route("/import")
+@admin_required
+def import_center():
+    return render_template("import_center.html")
+
+
+@app.route("/import/students", methods=["GET", "POST"])
+@admin_required
+def import_students_page():
+    conn = get_conn()
+    cur = conn.cursor()
+    
+    # Fetch all active branches
+    cur.execute("SELECT id, branch_code, branch_name, address FROM branches WHERE is_active = 1 ORDER BY branch_name")
+    branches = cur.fetchall()
+    
+    # Get default branch (Head Office)
+    cur.execute("SELECT id FROM branches WHERE branch_code = ?", ("HO",))
+    default_branch = cur.fetchone()
+    default_branch_id = default_branch["id"] if default_branch else 1
+    
+    conn.close()
+    
+    import_results = None
+    
+    if request.method == "POST":
+        if 'csv_file' not in request.files:
+            flash("No file selected.", "danger")
+            return redirect(url_for("import_students_page"))
+        
+        file = request.files['csv_file']
+        
+        if file.filename == '':
+            flash("No file selected.", "danger")
+            return redirect(url_for("import_students_page"))
+        
+        if not file.filename.endswith('.csv'):
+            flash("Please upload a CSV file.", "danger")
+            return redirect(url_for("import_students_page"))
+        
+        try:
+            # Read CSV file
+            stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+            csv_reader = csv.DictReader(stream)
+            
+            if not csv_reader.fieldnames:
+                flash("CSV file is empty.", "danger")
+                return redirect(url_for("import_students_page"))
+            
+            conn = get_conn()
+            cur = conn.cursor()
+            
+            # Get default branch (Head Office)
+            cur.execute("SELECT id FROM branches WHERE branch_code = ?", ("HO",))
+            default_branch = cur.fetchone()
+            default_branch_id = default_branch["id"] if default_branch else 1
+            
+            success_count = 0
+            errors = []
+            row_num = 2  # Start from row 2 (row 1 is headers)
+            now = datetime.now().isoformat(timespec="seconds")
+            
+            for row in csv_reader:
+                try:
+                    full_name = row.get('full_name', '').strip()
+                    phone = row.get('phone', '').strip()
+                    gender = row.get('gender', '').strip()
+                    email = row.get('email', '').strip()
+                    address = row.get('address', '').strip()
+                    education_level = row.get('education_level', '').strip()
+                    qualification = row.get('qualification', '').strip()
+                    employment_status = row.get('employment_status', '').strip()
+                    status = row.get('status', 'active').strip()
+                    branch_code = row.get('branch_code', '').strip()
+                    
+                    # Validate required fields
+                    if not full_name:
+                        errors.append({
+                            'row': row_num,
+                            'message': 'Missing full_name (required)'
+                        })
+                        row_num += 1
+                        continue
+                    
+                    if not phone:
+                        errors.append({
+                            'row': row_num,
+                            'message': 'Missing phone (required)'
+                        })
+                        row_num += 1
+                        continue
+                    
+                    # Use default branch if not provided
+                    if not branch_code:
+                        branch_id = default_branch_id
+                    else:
+                        # Look up branch by code
+                        cur.execute("SELECT id FROM branches WHERE branch_code = ?", (branch_code,))
+                        branch = cur.fetchone()
+                        if branch:
+                            branch_id = branch["id"]
+                        else:
+                            errors.append({
+                                'row': row_num,
+                                'message': f'Invalid branch_code: {branch_code}'
+                            })
+                            row_num += 1
+                            continue
+                    
+                    # Validate education level if provided
+                    if education_level and education_level not in QUALIFICATION_LEVELS:
+                        errors.append({
+                            'row': row_num,
+                            'message': f'Invalid education_level: {education_level}. Must be one of: {", ".join(QUALIFICATION_LEVELS.keys())}'
+                        })
+                        row_num += 1
+                        continue
+                    
+                    # Validate employment status if provided
+                    valid_statuses = ['unemployed', 'employed', 'self_employed', 'student']
+                    if employment_status and employment_status not in valid_statuses:
+                        errors.append({
+                            'row': row_num,
+                            'message': f'Invalid employment_status: {employment_status}. Must be one of: {", ".join(valid_statuses)}'
+                        })
+                        row_num += 1
+                        continue
+                    
+                    # Validate gender if provided
+                    valid_genders = ['Male', 'Female', 'Other']
+                    if gender and gender not in valid_genders:
+                        errors.append({
+                            'row': row_num,
+                            'message': f'Invalid gender: {gender}. Must be one of: {", ".join(valid_genders)}'
+                        })
+                        row_num += 1
+                        continue
+                    
+                    # Validate status if provided
+                    valid_statuses_list = ['active', 'completed', 'dropped']
+                    if status and status not in valid_statuses_list:
+                        errors.append({
+                            'row': row_num,
+                            'message': f'Invalid status: {status}. Must be one of: {", ".join(valid_statuses_list)}'
+                        })
+                        row_num += 1
+                        continue
+                    
+                    # Check if student with same registration number already exists (duplicate check)
+                    student_code = row.get('student_code', '').strip()
+                    if not student_code:
+                        # Auto-generate registration number if not provided
+                        cur.execute("SELECT student_code FROM students ORDER BY CAST(student_code AS INTEGER) DESC LIMIT 1")
+                        result = cur.fetchone()
+                        if result and result["student_code"]:
+                            try:
+                                max_reg = int(result["student_code"])
+                                student_code = str(max_reg + 1)
+                            except (ValueError, TypeError):
+                                student_code = str(1515001)
+                        else:
+                            student_code = str(1515001)
+                    else:
+                        # Check if provided registration number already exists
+                        cur.execute("SELECT id FROM students WHERE student_code = ?", (student_code,))
+                        if cur.fetchone():
+                            errors.append({
+                                'row': row_num,
+                                'message': f'Student with registration number {student_code} already exists. Duplicate skipped.'
+                            })
+                            row_num += 1
+                            continue
+                    
+                    # Insert student
+                    cur.execute("""
+                        INSERT INTO students (
+                            student_code,
+                            full_name,
+                            phone,
+                            gender,
+                            email,
+                            address,
+                            education_level,
+                            qualification,
+                            employment_status,
+                            joined_date,
+                            status,
+                            branch_id,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        student_code,
+                        full_name,
+                        phone,
+                        gender,
+                        email,
+                        address,
+                        education_level,
+                        qualification,
+                        employment_status,
+                        now,
+                        status,
+                        branch_id,
+                        now,
+                        now
+                    ))
+                    
+                    success_count += 1
+                    
+                except Exception as e:
+                    errors.append({
+                        'row': row_num,
+                        'message': str(e)
+                    })
+                
+                row_num += 1
+            
+            conn.commit()
+            conn.close()
+            
+            import_results = {
+                'success_count': success_count,
+                'errors': errors
+            }
+            
+            if success_count > 0:
+                flash(f"Successfully imported {success_count} student(s).", "success")
+            
+        except Exception as e:
+            flash(f"Error processing file: {str(e)}", "danger")
+            return redirect(url_for("import_students_page"))
+    
+    return render_template(
+        "import_students.html",
+        import_results=import_results,
+        branches=branches
+    )
+
+
+@app.route("/import/courses", methods=["GET", "POST"])
+@admin_required
+def import_courses_page():
+    import_results = None
+    
+    if request.method == "POST":
+        if 'csv_file' not in request.files:
+            flash("No file selected.", "danger")
+            return redirect(url_for("import_courses_page"))
+        
+        file = request.files['csv_file']
+        
+        if file.filename == '':
+            flash("No file selected.", "danger")
+            return redirect(url_for("import_courses_page"))
+        
+        if not file.filename.endswith('.csv'):
+            flash("Please upload a CSV file.", "danger")
+            return redirect(url_for("import_courses_page"))
+        
+        try:
+            # Read CSV file
+            stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+            csv_reader = csv.DictReader(stream)
+            
+            if not csv_reader.fieldnames:
+                flash("CSV file is empty.", "danger")
+                return redirect(url_for("import_courses_page"))
+            
+            conn = get_conn()
+            cur = conn.cursor()
+            
+            success_count = 0
+            errors = []
+            row_num = 2  # Start from row 2 (row 1 is headers)
+            now = datetime.now().isoformat(timespec="seconds")
+            
+            for row in csv_reader:
+                try:
+                    course_name = row.get('course_name', '').strip()
+                    duration = row.get('duration', '').strip()
+                    fee = row.get('fee', '').strip()
+                    
+                    # Validate required fields
+                    if not course_name:
+                        errors.append({
+                            'row': row_num,
+                            'message': 'Missing course_name (required)'
+                        })
+                        row_num += 1
+                        continue
+                    
+                    # Check if course already exists
+                    cur.execute("SELECT id FROM courses WHERE course_name = ?", (course_name,))
+                    if cur.fetchone():
+                        errors.append({
+                            'row': row_num,
+                            'message': f'Course "{course_name}" already exists'
+                        })
+                        row_num += 1
+                        continue
+                    
+                    # Validate and convert fee if provided
+                    if fee:
+                        try:
+                            fee = float(fee)
+                        except ValueError:
+                            errors.append({
+                                'row': row_num,
+                                'message': f'Invalid fee amount: {fee}'
+                            })
+                            row_num += 1
+                            continue
+                    else:
+                        fee = 0
+                    
+                    # Insert course
+                    cur.execute("""
+                        INSERT INTO courses (
+                            course_name,
+                            duration,
+                            fee,
+                            is_active,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (
+                        course_name,
+                        duration,
+                        fee,
+                        1,
+                        now,
+                        now
+                    ))
+                    
+                    success_count += 1
+                    
+                except Exception as e:
+                    errors.append({
+                        'row': row_num,
+                        'message': str(e)
+                    })
+                
+                row_num += 1
+            
+            conn.commit()
+            conn.close()
+            
+            import_results = {
+                'success_count': success_count,
+                'errors': errors
+            }
+            
+            if success_count > 0:
+                flash(f"Successfully imported {success_count} course(s).", "success")
+            
+        except Exception as e:
+            flash(f"Error processing file: {str(e)}", "danger")
+            return redirect(url_for("import_courses_page"))
+    
+    return render_template(
+        "import_courses.html",
+        import_results=import_results
+    )
 
 
 if __name__ == "__main__":

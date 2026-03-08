@@ -33,6 +33,7 @@
     <a href="{{ url_for('reports_center') }}">Reports</a>
       {% endif %}
     {% if session.get("role") == "admin" %}
+    <a href="{{ url_for('import_center') }}">Import</a>
     <a href="{{ url_for('users') }}">Users</a>
     <a href="{{ url_for('activity_logs') }}">Activity Logs</a>
     {% endif %}

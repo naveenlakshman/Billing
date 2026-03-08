@@ -19,6 +19,20 @@
     </select>
    </div>
 
+  {% if student %}
+  <div class="form-group">
+    <label>Registration Number</label>
+    <input type="text" value="{{ student.student_code }}" readonly style="background-color: #f5f5f5; cursor: not-allowed;">
+    <small style="color: #666; display: block; margin-top: 5px;">System-assigned registration number (cannot be changed)</small>
+  </div>
+  {% else %}
+  <div class="form-group">
+    <label>Registration Number</label>
+    <input type="text" id="reg_number_preview" readonly style="background-color: #f5f5f5; cursor: not-allowed;" placeholder="Will be auto-generated">
+    <small style="color: #666; display: block; margin-top: 5px;">System will auto-generate the next registration number when you save</small>
+  </div>
+  {% endif %}
+
   <div class="form-group">
     <label>Full Name</label>
     <input type="text" name="full_name" required {% if student %}value="{{ student.full_name }}"{% endif %}>
@@ -27,6 +41,16 @@
   <div class="form-group">
     <label>Phone</label>
     <input type="text" name="phone" required {% if student %}value="{{ student.phone }}"{% endif %}>
+  </div>
+
+  <div class="form-group">
+    <label>Gender</label>
+    <select name="gender">
+      <option value="">-- Select --</option>
+      <option value="Male" {% if student and student.gender == 'Male' %}selected{% endif %}>Male</option>
+      <option value="Female" {% if student and student.gender == 'Female' %}selected{% endif %}>Female</option>
+      <option value="Other" {% if student and student.gender == 'Other' %}selected{% endif %}>Other</option>
+    </select>
   </div>
 
   <div class="form-group">
@@ -40,8 +64,30 @@
   </div>
 
   <div class="form-group">
+    <label>Education Level</label>
+    <select name="education_level">
+      <option value="">-- Select --</option>
+      <option value="Pre-University" {% if student and student.education_level == 'Pre-University' %}selected{% endif %}>Pre-University</option>
+      <option value="Undergraduate" {% if student and student.education_level == 'Undergraduate' %}selected{% endif %}>Undergraduate</option>
+      <option value="School" {% if student and student.education_level == 'School' %}selected{% endif %}>School</option>
+      <option value="Diploma" {% if student and student.education_level == 'Diploma' %}selected{% endif %}>Diploma</option>
+      <option value="Technical" {% if student and student.education_level == 'Technical' %}selected{% endif %}>Technical</option>
+      <option value="Postgraduate" {% if student and student.education_level == 'Postgraduate' %}selected{% endif %}>Postgraduate</option>
+    </select>
+  </div>
+
+  <div class="form-group">
     <label>Qualification</label>
-    <input type="text" name="qualification" {% if student %}value="{{ student.qualification }}"{% endif %}>
+    <select id="qualification_select" name="qualification_select" style="margin-bottom: 10px;">
+      <option value="">-- Select from list or enter custom --</option>
+      <option value="custom">Other / Enter Custom</option>
+    </select>
+    <input type="text" id="qualification_custom" name="qualification" 
+           placeholder="Enter custom qualification or select from dropdown" 
+           {% if student %}value="{{ student.qualification }}"{% endif %}>
+    <small style="color: #666; display: block; margin-top: 5px;">
+      Select from the dropdown list above or enter a custom qualification directly in the text field.
+    </small>
   </div>
 
   <div class="form-group">
@@ -55,10 +101,68 @@
     </select>
   </div>
 
+  <div class="form-group">
+    <label>Student Status</label>
+    <select name="status">
+      <option value="active" {% if student and student.status == 'active' %}selected{% elif not student %}selected{% endif %}>Active</option>
+      <option value="completed" {% if student and student.status == 'completed' %}selected{% endif %}>Completed</option>
+      <option value="dropped" {% if student and student.status == 'dropped' %}selected{% endif %}>Dropped</option>
+    </select>
+  </div>
+
   <button class="btn btn-primary">Save Student</button>
 
 </form>
 
 </div>
+
+<script>
+// Qualification levels data
+const qualificationLevels = {{ qualification_levels | tojson }};
+
+// Get education level and qualification elements
+const educationLevelSelect = document.querySelector('select[name="education_level"]');
+const qualificationSelect = document.getElementById('qualification_select');
+const qualificationCustom = document.getElementById('qualification_custom');
+
+// Function to update qualifications dropdown
+function updateQualifications() {
+  const selectedLevel = educationLevelSelect.value;
+  
+  // Clear existing options except the first two
+  while (qualificationSelect.options.length > 2) {
+    qualificationSelect.remove(2);
+  }
+  
+  // Add qualifications for selected level
+  if (selectedLevel && qualificationLevels[selectedLevel]) {
+    const qualifications = qualificationLevels[selectedLevel];
+    qualifications.forEach(qual => {
+      const option = document.createElement('option');
+      option.value = qual;
+      option.textContent = qual;
+      qualificationSelect.appendChild(option);
+    });
+  }
+}
+
+// Handle qualification select change
+qualificationSelect.addEventListener('change', function() {
+  if (this.value && this.value !== 'custom') {
+    qualificationCustom.value = this.value;
+  } else if (this.value === 'custom') {
+    qualificationCustom.value = '';
+    qualificationCustom.focus();
+  }
+});
+
+// Update qualifications when education level changes
+educationLevelSelect.addEventListener('change', updateQualifications);
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+  updateQualifications();
+});
+</script>
 
 {% endblock %}

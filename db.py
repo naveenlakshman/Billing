@@ -250,6 +250,8 @@ def init_db():
     """)
 
     # ---------- STUDENT MIGRATIONS ----------
+    add_column_if_not_exists(cur, "students", "gender", "TEXT")
+    add_column_if_not_exists(cur, "students", "education_level", "TEXT")
     add_column_if_not_exists(cur, "students", "qualification", "TEXT")
     add_column_if_not_exists(cur, "students", "employment_status", "TEXT DEFAULT 'unemployed'")
 

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2>Import Courses</h2>
+
+<div class="card">
+  <h3>CSV File Format</h3>
+  <p>Your CSV file should have the following columns (in this order):</p>
+  <ul>
+    <li><strong>course_name</strong> - Course name (required, must be unique)</li>
+    <li><strong>duration</strong> - Course duration (optional)</li>
+    <li><strong>fee</strong> - Course fee amount (optional, defaults to 0)</li>
+  </ul>
+  <p><strong>Note:</strong> The first row will be treated as headers. Rows with missing course_name will be skipped. Duplicate course names will be skipped.</p>
+</div>
+
+<div class="card">
+  <h3>Upload CSV File</h3>
+  <form method="post" enctype="multipart/form-data">
+    <div class="form-group">
+      <label>Select CSV File</label>
+      <input type="file" name="csv_file" accept=".csv" required>
+      <a href="{{ url_for('static', filename='sample_courses.csv') }}" download="sample_courses.csv" class="btn btn-info" style="margin-left: 10px;">
+        📥 Download Sample Template
+      </a>
+    </div>
+    <button type="submit" class="btn btn-primary">Import Courses</button>
+    <a href="{{ url_for('import_center') }}" class="btn btn-secondary">Cancel</a>
+  </form>
+</div>
+
+{% if import_results %}
+<div class="card">
+  <h3>Import Results</h3>
+  
+  {% if import_results.success_count > 0 %}
+  <div style="color: green; margin-bottom: 10px;">
+    <strong>✓ Successfully imported {{ import_results.success_count }} course(s)</strong>
+  </div>
+  {% endif %}
+
+  {% if import_results.errors %}
+  <div style="color: red; margin-bottom: 10px;">
+    <strong>✗ Errors found in {{ import_results.errors|length }} row(s)</strong>
+  </div>
+  <table border="1" width="100%" cellpadding="10" style="margin-top: 10px;">
+    <tr>
+      <th>Row #</th>
+      <th>Error Message</th>
+    </tr>
+    {% for error in import_results.errors %}
+    <tr>
+      <td>{{ error.row }}</td>
+      <td>{{ error.message }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if not import_results.errors and import_results.success_count == 0 %}
+  <div style="color: orange;">
+    <strong>⚠ No courses were imported. Please check your file and try again.</strong>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

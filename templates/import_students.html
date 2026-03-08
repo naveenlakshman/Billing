@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2>Import Students</h2>
+
+<div class="card">
+  <h3>CSV File Format</h3>
+  <p>Your CSV file should have the following columns (in this order):</p>
+  <ul>
+    <li><strong>student_code</strong> - Student registration number (optional). If not provided, system auto-generates next number. Must be unique if provided.</li>
+    <li><strong>full_name</strong> - Student's full name (required)</li>
+    <li><strong>phone</strong> - Student's phone number (required)</li>
+    <li><strong>gender</strong> - Gender (optional). Allowed values: Male, Female, Other</li>
+    <li><strong>email</strong> - Student's email (optional)</li>
+    <li><strong>address</strong> - Student's address (optional)</li>
+    <li><strong>education_level</strong> - Education level (optional). Allowed values: School, Pre-University, Diploma, Technical, Undergraduate, Postgraduate</li>
+    <li><strong>qualification</strong> - Qualification (optional)</li>
+    <li><strong>employment_status</strong> - Employment status (optional). Allowed values: unemployed, employed, self_employed, student</li>
+    <li><strong>status</strong> - Student status (optional, defaults to active). Allowed values: active, completed, dropped</li>
+    <li><strong>branch_code</strong> - Branch code (optional, defaults to Head Office if not provided). Use the branch codes from the list below.</li>
+  </ul>
+  <p><strong>Note:</strong> The first row will be treated as headers. Duplicate registration numbers are automatically skipped to prevent duplicate student records. If no registration number is provided, the system auto-generates the next number.</p>
+</div>
+
+<div class="card">
+  <h3>Available Branches</h3>
+  <table border="1" width="100%" cellpadding="10" style="margin-bottom: 15px;">
+    <tr>
+      <th>Branch Code</th>
+      <th>Branch Name</th>
+      <th>Address</th>
+    </tr>
+    {% for branch in branches %}
+    <tr>
+      <td><strong>{{ branch.branch_code }}</strong></td>
+      <td>{{ branch.branch_name }}</td>
+      <td>{{ branch.address or "-" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p style="color: #666; font-size: 12px;">Use the <strong>Branch Code</strong> (e.g., HO, HB) in your CSV file's branch_code column.</p>
+</div>
+
+<div class="card">
+  <h3>Upload CSV File</h3>
+  <form method="post" enctype="multipart/form-data">
+    <div class="form-group">
+      <label>Select CSV File</label>
+      <input type="file" name="csv_file" accept=".csv" required>
+      <a href="{{ url_for('static', filename='sample_students.csv') }}" download="sample_students.csv" class="btn btn-info" style="margin-left: 10px;">
+        📥 Download Sample Template
+      </a>
+    </div>
+    <button type="submit" class="btn btn-primary">Import Students</button>
+    <a href="{{ url_for('import_center') }}" class="btn btn-secondary">Cancel</a>
+  </form>
+</div>
+
+{% if import_results %}
+<div class="card">
+  <h3>Import Results</h3>
+  
+  {% if import_results.success_count > 0 %}
+  <div style="color: green; margin-bottom: 10px;">
+    <strong>✓ Successfully imported {{ import_results.success_count }} student(s)</strong>
+  </div>
+  {% endif %}
+
+  {% if import_results.errors %}
+  <div style="color: red; margin-bottom: 10px;">
+    <strong>✗ Errors found in {{ import_results.errors|length }} row(s)</strong>
+  </div>
+  <table border="1" width="100%" cellpadding="10" style="margin-top: 10px;">
+    <tr>
+      <th>Row #</th>
+      <th>Error Message</th>
+    </tr>
+    {% for error in import_results.errors %}
+    <tr>
+      <td>{{ error.row }}</td>
+      <td>{{ error.message }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if not import_results.errors and import_results.success_count == 0 %}
+  <div style="color: orange;">
+    <strong>⚠ No students were imported. Please check your file and try again.</strong>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

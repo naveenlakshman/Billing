@@ -1,0 +1,7 @@
+student_code,full_name,phone,gender,email,address,education_level,qualification,employment_status,status,branch_code
+1516239,Anushka R,6364912043,Female,rraju67303@gmail.com,Kurubarapete Near Park Road,School,10th Std,student,active,HO
+1516240,Umesh Chandra Prasad L,8951569234,Male,umeshchandraprasadl@gmail.com,Yanagunte Hosakote,Pre-University,PUC,student,active,HO
+,Rajesh Kumar,9876543245,Male,rajesh@example.com,789 Pine Road,Undergraduate,BA,employed,active,HB
+,Priya Sharma,9876543246,Female,priya@example.com,321 Elm Street,Diploma,Diploma,unemployed,completed,HB
+,Amit Patel,9876543247,Male,amit@example.com,654 Maple Drive,Technical,ITI,employed,active,HO
+,Neha Singh,9876543248,Female,neha@example.com,987 Birch Lane,Postgraduate,MBA,employed,dropped,HO
