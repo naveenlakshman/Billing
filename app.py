@@ -1038,6 +1038,113 @@ def invoices():
     return render_template("invoices.html", invoices=invoices, search=search)
 
 
+@app.route("/receivables")
+@login_required
+def receivables():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # Get today's date in YYYY-MM-DD format
+    today = datetime.now().date().isoformat()
+
+    # Query for past dues
+    cur.execute("""
+        SELECT
+            ip.id,
+            ip.installment_no,
+            ip.due_date,
+            ip.amount_due,
+            ip.amount_paid,
+            ip.status,
+            i.invoice_no,
+            i.id AS invoice_id,
+            s.full_name AS student_name,
+            s.student_code,
+            s.phone AS student_phone,
+            b.branch_name,
+            (ip.amount_due - ip.amount_paid) AS balance_due
+        FROM installment_plans ip
+        JOIN invoices i ON ip.invoice_id = i.id
+        JOIN students s ON i.student_id = s.id
+        LEFT JOIN branches b ON i.branch_id = b.id
+        WHERE ip.status != 'paid'
+            AND parse_date(ip.due_date) < ?
+        ORDER BY parse_date(ip.due_date) ASC
+    """, (today,))
+    past_dues = cur.fetchall()
+
+    # Query for today's dues
+    cur.execute("""
+        SELECT
+            ip.id,
+            ip.installment_no,
+            ip.due_date,
+            ip.amount_due,
+            ip.amount_paid,
+            ip.status,
+            i.invoice_no,
+            i.id AS invoice_id,
+            s.full_name AS student_name,
+            s.student_code,
+            s.phone AS student_phone,
+            b.branch_name,
+            (ip.amount_due - ip.amount_paid) AS balance_due
+        FROM installment_plans ip
+        JOIN invoices i ON ip.invoice_id = i.id
+        JOIN students s ON i.student_id = s.id
+        LEFT JOIN branches b ON i.branch_id = b.id
+        WHERE ip.status != 'paid'
+            AND parse_date(ip.due_date) = ?
+        ORDER BY s.full_name ASC
+    """, (today,))
+    todays_dues = cur.fetchall()
+
+    # Query for upcoming dues
+    cur.execute("""
+        SELECT
+            ip.id,
+            ip.installment_no,
+            ip.due_date,
+            ip.amount_due,
+            ip.amount_paid,
+            ip.status,
+            i.invoice_no,
+            i.id AS invoice_id,
+            s.full_name AS student_name,
+            s.student_code,
+            s.phone AS student_phone,
+            b.branch_name,
+            (ip.amount_due - ip.amount_paid) AS balance_due
+        FROM installment_plans ip
+        JOIN invoices i ON ip.invoice_id = i.id
+        JOIN students s ON i.student_id = s.id
+        LEFT JOIN branches b ON i.branch_id = b.id
+        WHERE ip.status != 'paid'
+            AND parse_date(ip.due_date) > ?
+        ORDER BY parse_date(ip.due_date) ASC
+        LIMIT 50
+    """, (today,))
+    upcoming_dues = cur.fetchall()
+
+    # Calculate totals
+    total_past_due = sum(row['balance_due'] for row in past_dues)
+    total_today_due = sum(row['balance_due'] for row in todays_dues)
+    total_upcoming_due = sum(row['balance_due'] for row in upcoming_dues)
+
+    conn.close()
+
+    return render_template(
+        "receivables.html",
+        past_dues=past_dues,
+        todays_dues=todays_dues,
+        upcoming_dues=upcoming_dues,
+        total_past_due=total_past_due,
+        total_today_due=total_today_due,
+        total_upcoming_due=total_upcoming_due,
+        today=today
+    )
+
+
 @app.route("/invoice/new", methods=["GET", "POST"])
 @login_required
 def invoice_new():
