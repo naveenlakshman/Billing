@@ -9,19 +9,24 @@ def get_conn():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     
-    # Register custom function to parse DD-MM-YYYY dates
+    # Register custom function to parse dates in both DD-MM-YYYY and YYYY-MM-DD formats
     def parse_ddmmyyyy(date_str):
-        """Parse DD-MM-YYYY formatted date string to YYYY-MM-DD for comparison"""
+        """Parse date string to YYYY-MM-DD format for comparison"""
         if not date_str:
             return None
         try:
-            # Handle DD-MM-YYYY format
             if '-' in date_str:
                 parts = date_str.split('-')
                 if len(parts) == 3:
-                    day, month, year = parts
-                    # Return in YYYY-MM-DD format for easy comparison
-                    return f"{year}-{month}-{day}"
+                    # Check if first part is year (> 31) or day (<= 31)
+                    first_part = int(parts[0])
+                    if first_part > 31:
+                        # Already in YYYY-MM-DD format
+                        return date_str
+                    else:
+                        # DD-MM-YYYY format, convert to YYYY-MM-DD
+                        day, month, year = parts
+                        return f"{year}-{month}-{day}"
         except:
             pass
         return date_str  # Return as-is if parsing fails
