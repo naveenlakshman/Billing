@@ -1629,6 +1629,7 @@ def invoice_view(invoice_id):
 
 @app.route("/invoice/<int:invoice_id>/edit", methods=["GET", "POST"])
 @login_required
+@admin_required
 def invoice_edit(invoice_id):
     conn = get_conn()
     cur = conn.cursor()
@@ -2006,6 +2007,101 @@ def invoice_edit(invoice_id):
         total_paid=total_paid,
         mode="edit"
     )
+
+
+@app.route("/installment/<int:installment_id>/edit", methods=["POST"])
+@login_required
+@admin_required
+def installment_edit(installment_id):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    try:
+        now = datetime.now().isoformat(timespec="seconds")
+
+        # Get the installment details
+        cur.execute("""
+            SELECT ip.*, i.id AS invoice_id, i.total_amount, i.invoice_no
+            FROM installment_plans ip
+            JOIN invoices i ON ip.invoice_id = i.id
+            WHERE ip.id = ?
+        """, (installment_id,))
+        installment = cur.fetchone()
+
+        if not installment:
+            flash("Installment not found.", "danger")
+            conn.close()
+            return redirect(url_for("invoices"))
+
+        invoice_id = installment["invoice_id"]
+        invoice_no = installment["invoice_no"]
+        amount_paid = float(installment["amount_paid"] or 0)
+
+        # Get form data
+        due_date = request.form.get("due_date", "").strip()
+        amount_due_str = request.form.get("amount_due", "").strip()
+        remarks = request.form.get("remarks", "").strip()
+
+        # Validation
+        if not due_date:
+            flash("Due date is required.", "danger")
+            conn.close()
+            return redirect(url_for("invoice_view", invoice_id=invoice_id))
+
+        try:
+            amount_due = float(amount_due_str or 0)
+        except ValueError:
+            flash("Invalid amount due value.", "danger")
+            conn.close()
+            return redirect(url_for("invoice_view", invoice_id=invoice_id))
+
+        if amount_due <= 0:
+            flash("Amount due must be greater than 0.", "danger")
+            conn.close()
+            return redirect(url_for("invoice_view", invoice_id=invoice_id))
+
+        # Critical validation: amount_due cannot be less than amount_paid
+        if amount_due < amount_paid:
+            flash(f"Amount Due (₹{amount_due:.2f}) cannot be less than Amount Paid (₹{amount_paid:.2f}).", "danger")
+            conn.close()
+            return redirect(url_for("invoice_view", invoice_id=invoice_id))
+
+        # Check if total of all installments still equals invoice total (if amount changed)
+        old_amount_due = float(installment["amount_due"] or 0)
+        if amount_due != old_amount_due:
+            # Get sum of other installments
+            cur.execute("""
+                SELECT IFNULL(SUM(amount_due), 0) AS other_installments_total
+                FROM installment_plans
+                WHERE invoice_id = ? AND id != ?
+            """, (invoice_id, installment_id))
+            other_total = float(cur.fetchone()["other_installments_total"] or 0)
+
+            new_total = other_total + amount_due
+            invoice_total = float(installment["total_amount"] or 0)
+
+            if abs(new_total - invoice_total) > 0.01:  # Allow small rounding differences
+                flash(f"Total installments (₹{new_total:.2f}) must equal invoice total (₹{invoice_total:.2f}). Difference: ₹{abs(new_total - invoice_total):.2f}", "danger")
+                conn.close()
+                return redirect(url_for("invoice_view", invoice_id=invoice_id))
+
+        # Update the installment
+        cur.execute("""
+            UPDATE installment_plans
+            SET due_date = ?, amount_due = ?, remarks = ?, updated_at = ?
+            WHERE id = ?
+        """, (due_date, amount_due, remarks, now, installment_id))
+
+        conn.commit()
+        flash(f"Installment updated successfully for invoice {invoice_no}.", "success")
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Error updating installment: {str(e)}", "danger")
+    finally:
+        conn.close()
+
+    return redirect(url_for("invoice_view", invoice_id=invoice_id))
 
 
 @app.route("/payment/new", methods=["GET", "POST"])
