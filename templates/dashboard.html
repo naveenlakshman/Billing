@@ -56,7 +56,11 @@
 
 <div class="card receivable-card">
   <h3>Total Receivables</h3>
-  <p class="receivable-total">₹ {{ "%.2f"|format(total_receivables or 0) }}</p>
+  <p class="receivable-total">
+    <a href="{{ url_for('receivables', branch_id=branch_id) }}" class="receivable-link">
+      ₹ {{ "%.2f"|format(total_receivables or 0) }}
+    </a>
+  </p>
 
   {% set total = total_receivables if total_receivables > 0 else 1 %}
   {% set current_pct = (current_amount / total * 100) %}
@@ -66,33 +70,53 @@
   {% set b4_pct = (bucket_above_45 / total * 100) %}
 
   <div class="receivable-bar">
-    <div class="seg-current" style="width: {{ current_pct }}%;"></div>
-    <div class="seg-1-15" style="width: {{ b1_pct }}%;"></div>
-    <div class="seg-16-30" style="width: {{ b2_pct }}%;"></div>
-    <div class="seg-31-45" style="width: {{ b3_pct }}%;"></div>
-    <div class="seg-45plus" style="width: {{ b4_pct }}%;"></div>
+    <a href="{{ url_for('overdue_installments_report', age_range='current', branch_id=branch_id) }}" class="seg-current seg-link" style="width: {{ current_pct }}%;"></a>
+    <a href="{{ url_for('overdue_installments_report', age_range='1-15', branch_id=branch_id) }}" class="seg-1-15 seg-link" style="width: {{ b1_pct }}%;"></a>
+    <a href="{{ url_for('overdue_installments_report', age_range='16-30', branch_id=branch_id) }}" class="seg-16-30 seg-link" style="width: {{ b2_pct }}%;"></a>
+    <a href="{{ url_for('overdue_installments_report', age_range='31-45', branch_id=branch_id) }}" class="seg-31-45 seg-link" style="width: {{ b3_pct }}%;"></a>
+    <a href="{{ url_for('overdue_installments_report', age_range='above-45', branch_id=branch_id) }}" class="seg-45plus seg-link" style="width: {{ b4_pct }}%;"></a>
   </div>
 
   <div class="receivable-grid">
     <div>
       <small>CURRENT</small>
-      <p>₹ {{ "%.2f"|format(current_amount or 0) }}</p>
+      <p>
+        <a href="{{ url_for('overdue_installments_report', age_range='current', branch_id=branch_id) }}" class="receivable-link">
+          ₹ {{ "%.2f"|format(current_amount or 0) }}
+        </a>
+      </p>
     </div>
     <div>
       <small>1-15 Days</small>
-      <p>₹ {{ "%.2f"|format(bucket_1_15 or 0) }}</p>
+      <p>
+        <a href="{{ url_for('overdue_installments_report', age_range='1-15', branch_id=branch_id) }}" class="receivable-link">
+          ₹ {{ "%.2f"|format(bucket_1_15 or 0) }}
+        </a>
+      </p>
     </div>
     <div>
       <small>16-30 Days</small>
-      <p>₹ {{ "%.2f"|format(bucket_16_30 or 0) }}</p>
+      <p>
+        <a href="{{ url_for('overdue_installments_report', age_range='16-30', branch_id=branch_id) }}" class="receivable-link">
+          ₹ {{ "%.2f"|format(bucket_16_30 or 0) }}
+        </a>
+      </p>
     </div>
     <div>
       <small>31-45 Days</small>
-      <p>₹ {{ "%.2f"|format(bucket_31_45 or 0) }}</p>
+      <p>
+        <a href="{{ url_for('overdue_installments_report', age_range='31-45', branch_id=branch_id) }}" class="receivable-link">
+          ₹ {{ "%.2f"|format(bucket_31_45 or 0) }}
+        </a>
+      </p>
     </div>
     <div>
       <small>Above 45 Days</small>
-      <p>₹ {{ "%.2f"|format(bucket_above_45 or 0) }}</p>
+      <p>
+        <a href="{{ url_for('overdue_installments_report', age_range='above-45', branch_id=branch_id) }}" class="receivable-link">
+          ₹ {{ "%.2f"|format(bucket_above_45 or 0) }}
+        </a>
+      </p>
     </div>
   </div>
 </div>

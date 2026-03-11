@@ -3,6 +3,25 @@
 {% block content %}
 <h2>Receivables - Student Installments</h2>
 
+<!-- Branch Filter -->
+<div class="card" style="margin-bottom: 20px;">
+  <form method="get" class="search-form">
+    <label for="branch_id">Filter by Branch:</label>
+    <select name="branch_id" id="branch_id" onchange="this.form.submit()">
+      <option value="">All Branches</option>
+      {% for branch in branches %}
+      <option value="{{ branch.id }}" {% if branch_id|string == branch.id|string %}selected{% endif %}>
+        {{ branch.branch_name }}
+      </option>
+      {% endfor %}
+    </select>
+
+    {% if branch_id %}
+    <a href="{{ url_for('receivables') }}" class="btn">Clear Filter</a>
+    {% endif %}
+  </form>
+</div>
+
 <div class="summary-cards">
   <div class="summary-card" style="border-left: 4px solid #e74c3c;">
     <h3>Past Due</h3>
@@ -36,11 +55,7 @@
       <th>Invoice No</th>
       <th>Installment #</th>
       <th>Amount Due</th>
-      <th>Amount Paid</th>
       <th>Balance Due</th>
-      <th>Status</th>
-      <th>Branch</th>
-      <th>Action</th>
     </tr>
 
     {% for item in past_dues %}
@@ -55,24 +70,13 @@
       </td>
       <td>{{ item.installment_no }}</td>
       <td>₹ {{ "%.2f"|format(item.amount_due) }}</td>
-      <td style="color: green;">₹ {{ "%.2f"|format(item.amount_paid) }}</td>
       <td style="color: #c0392b; font-weight: bold;">₹ {{ "%.2f"|format(item.balance_due) }}</td>
-      <td>
-        <span class="badge badge-{{ 'warning' if item.status == 'partially_paid' else 'danger' }}">
-          {{ item.status }}
-        </span>
-      </td>
-      <td>{{ item.branch_name or 'N/A' }}</td>
-      <td>
-        <a href="{{ url_for('invoice_view', invoice_id=item.invoice_id) }}">View Invoice</a>
-      </td>
     </tr>
     {% endfor %}
 
     <tr style="background-color: #f8f9fa; font-weight: bold;">
-      <td colspan="7" style="text-align: right;">Total Past Due:</td>
+      <td colspan="6" style="text-align: right;">Total Past Due:</td>
       <td style="color: #c0392b;">₹ {{ "%.2f"|format(total_past_due) }}</td>
-      <td colspan="3"></td>
     </tr>
   </table>
   {% else %}
@@ -93,11 +97,7 @@
       <th>Invoice No</th>
       <th>Installment #</th>
       <th>Amount Due</th>
-      <th>Amount Paid</th>
       <th>Balance Due</th>
-      <th>Status</th>
-      <th>Branch</th>
-      <th>Action</th>
     </tr>
 
     {% for item in todays_dues %}
@@ -112,24 +112,13 @@
       </td>
       <td>{{ item.installment_no }}</td>
       <td>₹ {{ "%.2f"|format(item.amount_due) }}</td>
-      <td style="color: green;">₹ {{ "%.2f"|format(item.amount_paid) }}</td>
       <td style="color: #e67e22; font-weight: bold;">₹ {{ "%.2f"|format(item.balance_due) }}</td>
-      <td>
-        <span class="badge badge-{{ 'warning' if item.status == 'partially_paid' else 'info' }}">
-          {{ item.status }}
-        </span>
-      </td>
-      <td>{{ item.branch_name or 'N/A' }}</td>
-      <td>
-        <a href="{{ url_for('invoice_view', invoice_id=item.invoice_id) }}">View Invoice</a>
-      </td>
     </tr>
     {% endfor %}
 
     <tr style="background-color: #f8f9fa; font-weight: bold;">
-      <td colspan="7" style="text-align: right;">Total Due Today:</td>
+      <td colspan="6" style="text-align: right;">Total Due Today:</td>
       <td style="color: #e67e22;">₹ {{ "%.2f"|format(total_today_due) }}</td>
-      <td colspan="3"></td>
     </tr>
   </table>
   {% else %}
@@ -150,11 +139,7 @@
       <th>Invoice No</th>
       <th>Installment #</th>
       <th>Amount Due</th>
-      <th>Amount Paid</th>
       <th>Balance Due</th>
-      <th>Status</th>
-      <th>Branch</th>
-      <th>Action</th>
     </tr>
 
     {% for item in upcoming_dues %}
@@ -169,24 +154,13 @@
       </td>
       <td>{{ item.installment_no }}</td>
       <td>₹ {{ "%.2f"|format(item.amount_due) }}</td>
-      <td style="color: green;">₹ {{ "%.2f"|format(item.amount_paid) }}</td>
       <td style="color: #3498db; font-weight: bold;">₹ {{ "%.2f"|format(item.balance_due) }}</td>
-      <td>
-        <span class="badge badge-{{ 'warning' if item.status == 'partially_paid' else 'secondary' }}">
-          {{ item.status }}
-        </span>
-      </td>
-      <td>{{ item.branch_name or 'N/A' }}</td>
-      <td>
-        <a href="{{ url_for('invoice_view', invoice_id=item.invoice_id) }}">View Invoice</a>
-      </td>
     </tr>
     {% endfor %}
 
     <tr style="background-color: #f8f9fa; font-weight: bold;">
-      <td colspan="7" style="text-align: right;">Total Upcoming:</td>
+      <td colspan="6" style="text-align: right;">Total Upcoming:</td>
       <td style="color: #3498db;">₹ {{ "%.2f"|format(total_upcoming_due) }}</td>
-      <td colspan="3"></td>
     </tr>
   </table>
   {% else %}
@@ -230,32 +204,22 @@
   margin: 5px 0 0 0;
 }
 
-.badge {
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
+.search-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.search-form label {
   font-weight: bold;
-  text-transform: uppercase;
+  margin: 0;
 }
 
-.badge-danger {
-  background-color: #e74c3c;
-  color: white;
-}
-
-.badge-warning {
-  background-color: #f39c12;
-  color: white;
-}
-
-.badge-info {
-  background-color: #3498db;
-  color: white;
-}
-
-.badge-secondary {
-  background-color: #95a5a6;
-  color: white;
+.search-form select {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
 }
 </style>
 

@@ -591,6 +591,10 @@ body {
     margin: 10px 0 16px;
 }
 
+.receivable-total .receivable-link {
+    color: #1f3c88;
+}
+
 .receivable-bar {
     width: 100%;
     height: 16px;
@@ -599,6 +603,16 @@ body {
     display: flex;
     margin-bottom: 20px;
     background: #eee;
+}
+
+.seg-link {
+    display: block;
+    transition: opacity 0.2s;
+}
+
+.seg-link:hover {
+    opacity: 0.8;
+    cursor: pointer;
 }
 
 .seg-current {
@@ -637,6 +651,18 @@ body {
     margin: 0;
     font-size: 22px;
     font-weight: bold;
+}
+
+.receivable-link {
+    color: inherit;
+    text-decoration: none;
+    transition: opacity 0.2s;
+}
+
+.receivable-link:hover {
+    opacity: 0.7;
+    text-decoration: underline;
+    cursor: pointer;
 }
 
 @media (max-width: 900px) {

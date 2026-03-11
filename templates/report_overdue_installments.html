@@ -17,11 +17,41 @@
       </select>
     </div>
 
+    <div class="form-group">
+      <label>Age Range</label>
+      <select name="age_range">
+        <option value="">All Ages</option>
+        <option value="current" {% if age_range == 'current' %}selected{% endif %}>Current (Not Yet Due)</option>
+        <option value="1-15" {% if age_range == '1-15' %}selected{% endif %}>1-15 Days Overdue</option>
+        <option value="16-30" {% if age_range == '16-30' %}selected{% endif %}>16-30 Days Overdue</option>
+        <option value="31-45" {% if age_range == '31-45' %}selected{% endif %}>31-45 Days Overdue</option>
+        <option value="above-45" {% if age_range == 'above-45' %}selected{% endif %}>Above 45 Days Overdue</option>
+      </select>
+    </div>
+
     <div class="form-group" style="align-self:end;">
       <button type="submit" class="btn btn-primary">Filter</button>
     </div>
+
+    {% if branch_id or age_range %}
+    <div class="form-group" style="align-self:end;">
+      <a href="{{ url_for('overdue_installments_report') }}" class="btn">Clear Filters</a>
+    </div>
+    {% endif %}
   </form>
 </div>
+
+{% if age_range %}
+<div class="alert alert-info">
+  <strong>Filter Applied:</strong>
+  {% if age_range == 'current' %}Showing installments that are not yet due or due today
+  {% elif age_range == '1-15' %}Showing installments overdue by 1-15 days
+  {% elif age_range == '16-30' %}Showing installments overdue by 16-30 days
+  {% elif age_range == '31-45' %}Showing installments overdue by 31-45 days
+  {% elif age_range == 'above-45' %}Showing installments overdue by more than 45 days
+  {% endif %}
+</div>
+{% endif %}
 
 <div class="grid">
   <div class="card stat-card">
@@ -44,6 +74,7 @@
   <table border="1" width="100%" cellpadding="10" class="billing-table">
     <tr>
       <th>Due Date</th>
+      <th>Overdue Days</th>
       <th>Student</th>
       <th>Branch</th>
       <th>Phone</th>
@@ -59,6 +90,18 @@
     {% for row in rows %}
     <tr>
       <td>{{ row.due_date }}</td>
+
+      <td>
+        {% if row.overdue_days <= 0 %}
+          <span style="color: #16a34a;">Current</span>
+        {% elif row.overdue_days <= 15 %}
+          <span style="color: #f59e0b;">{{ row.overdue_days }} days</span>
+        {% elif row.overdue_days <= 30 %}
+          <span style="color: #f97316;">{{ row.overdue_days }} days</span>
+        {% else %}
+          <span style="color: #dc2626; font-weight: bold;">{{ row.overdue_days }} days</span>
+        {% endif %}
+      </td>
 
       <td>
         <a href="{{ url_for('student_profile', student_id=row.student_id) }}">
@@ -96,7 +139,7 @@
     </tr>
     {% else %}
     <tr>
-      <td colspan="11" style="text-align:center;">No overdue installments found.</td>
+      <td colspan="12" style="text-align:center;">No installments found for the selected filters.</td>
     </tr>
     {% endfor %}
   </table>

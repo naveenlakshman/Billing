@@ -347,66 +347,69 @@ def dashboard():
 
     net_position = total_receipts - total_expenses
 
-    # Calculate aging buckets based on invoice_date
+    # Calculate aging buckets based on installment due_date
     current_amount = 0.0
     bucket_1_15 = 0.0
     bucket_16_30 = 0.0
     bucket_31_45 = 0.0
     bucket_above_45 = 0.0
-    
-    # Calculate receivables for ALL outstanding invoices (no date filter)
+
+    # Calculate receivables based on installment plans with outstanding amounts
     aging_query = """
         SELECT
-            invoices.id,
-            invoices.invoice_date,
-            invoices.total_amount,
-            IFNULL(SUM(receipts.amount_received), 0) AS total_received
-        FROM invoices
-        LEFT JOIN receipts ON invoices.id = receipts.invoice_id
-        WHERE invoices.status IN ('unpaid', 'partially_paid')
+            ip.id,
+            ip.due_date,
+            ip.amount_due,
+            ip.amount_paid,
+            ip.status,
+            i.branch_id
+        FROM installment_plans ip
+        JOIN invoices i ON ip.invoice_id = i.id
+        WHERE ip.status IN ('pending', 'partially_paid', 'overdue')
     """
     aging_params = []
-    
+
     if branch_id:
-        aging_query += " AND (invoices.branch_id = ? OR invoices.branch_id IS NULL)"
+        aging_query += " AND (i.branch_id = ? OR i.branch_id IS NULL)"
         aging_params.append(branch_id)
-    
-    aging_query += " GROUP BY invoices.id"
-    
+
     cur.execute(aging_query, aging_params)
     aging_rows = cur.fetchall()
-    
+
     for row in aging_rows:
-        invoice_date_str = row["invoice_date"]
-        invoice_date_obj = None
-        
+        due_date_str = row["due_date"]
+        due_date_obj = None
+
         # Try to parse the date in multiple formats
         try:
             # Try YYYY-MM-DD format first
-            if len(invoice_date_str) == 10 and invoice_date_str[4] == '-':
-                invoice_date_obj = datetime.strptime(invoice_date_str, "%Y-%m-%d").date()
+            if len(due_date_str) == 10 and due_date_str[4] == '-':
+                due_date_obj = datetime.strptime(due_date_str, "%Y-%m-%d").date()
+            # Try DD-MM-YYYY format
+            elif len(due_date_str) == 10 and due_date_str[2] == '-':
+                due_date_obj = datetime.strptime(due_date_str, "%d-%m-%Y").date()
             # Try "DD Month YYYY" format (e.g., "22 January 2026")
-            elif len(invoice_date_str) > 10:
-                invoice_date_obj = datetime.strptime(invoice_date_str, "%d %B %Y").date()
+            elif len(due_date_str) > 10:
+                due_date_obj = datetime.strptime(due_date_str, "%d %B %Y").date()
             # Try "DD Mon YYYY" format (e.g., "22 Jan 2026")
-            elif len(invoice_date_str) > 8:
-                invoice_date_obj = datetime.strptime(invoice_date_str, "%d %b %Y").date()
+            elif len(due_date_str) > 8:
+                due_date_obj = datetime.strptime(due_date_str, "%d %b %Y").date()
         except (ValueError, TypeError):
             # If parsing fails, skip this row
             continue
-        
-        if not invoice_date_obj:
+
+        if not due_date_obj:
             continue
-        
-        total_amount = float(row["total_amount"] or 0)
-        total_received = float(row["total_received"] or 0)
-        outstanding = total_amount - total_received
-        
+
+        amount_due = float(row["amount_due"] or 0)
+        amount_paid = float(row["amount_paid"] or 0)
+        outstanding = amount_due - amount_paid
+
         if outstanding <= 0:
             continue
-        
-        overdue_days = (today - invoice_date_obj).days
-        
+
+        overdue_days = (today - due_date_obj).days
+
         if overdue_days <= 0:
             current_amount += outstanding
         elif 1 <= overdue_days <= 15:
@@ -1047,8 +1050,20 @@ def receivables():
     # Get today's date in YYYY-MM-DD format
     today = datetime.now().date().isoformat()
 
-    # Query for past dues
+    # Get branch filter from query params
+    branch_id = request.args.get("branch_id", "").strip()
+
+    # Get all branches for filter dropdown
     cur.execute("""
+        SELECT *
+        FROM branches
+        WHERE is_active = 1
+        ORDER BY branch_name
+    """)
+    branches = cur.fetchall()
+
+    # Base query for past dues
+    past_dues_query = """
         SELECT
             ip.id,
             ip.installment_no,
@@ -1058,6 +1073,7 @@ def receivables():
             ip.status,
             i.invoice_no,
             i.id AS invoice_id,
+            i.branch_id,
             s.full_name AS student_name,
             s.student_code,
             s.phone AS student_phone,
@@ -1069,12 +1085,20 @@ def receivables():
         LEFT JOIN branches b ON i.branch_id = b.id
         WHERE ip.status != 'paid'
             AND parse_date(ip.due_date) < ?
-        ORDER BY parse_date(ip.due_date) ASC
-    """, (today,))
+    """
+    past_dues_params = [today]
+
+    if branch_id:
+        past_dues_query += " AND i.branch_id = ?"
+        past_dues_params.append(branch_id)
+
+    past_dues_query += " ORDER BY parse_date(ip.due_date) ASC"
+
+    cur.execute(past_dues_query, past_dues_params)
     past_dues = cur.fetchall()
 
     # Query for today's dues
-    cur.execute("""
+    todays_dues_query = """
         SELECT
             ip.id,
             ip.installment_no,
@@ -1084,6 +1108,7 @@ def receivables():
             ip.status,
             i.invoice_no,
             i.id AS invoice_id,
+            i.branch_id,
             s.full_name AS student_name,
             s.student_code,
             s.phone AS student_phone,
@@ -1095,12 +1120,20 @@ def receivables():
         LEFT JOIN branches b ON i.branch_id = b.id
         WHERE ip.status != 'paid'
             AND parse_date(ip.due_date) = ?
-        ORDER BY s.full_name ASC
-    """, (today,))
+    """
+    todays_dues_params = [today]
+
+    if branch_id:
+        todays_dues_query += " AND i.branch_id = ?"
+        todays_dues_params.append(branch_id)
+
+    todays_dues_query += " ORDER BY s.full_name ASC"
+
+    cur.execute(todays_dues_query, todays_dues_params)
     todays_dues = cur.fetchall()
 
     # Query for upcoming dues
-    cur.execute("""
+    upcoming_dues_query = """
         SELECT
             ip.id,
             ip.installment_no,
@@ -1110,6 +1143,7 @@ def receivables():
             ip.status,
             i.invoice_no,
             i.id AS invoice_id,
+            i.branch_id,
             s.full_name AS student_name,
             s.student_code,
             s.phone AS student_phone,
@@ -1121,9 +1155,16 @@ def receivables():
         LEFT JOIN branches b ON i.branch_id = b.id
         WHERE ip.status != 'paid'
             AND parse_date(ip.due_date) > ?
-        ORDER BY parse_date(ip.due_date) ASC
-        LIMIT 50
-    """, (today,))
+    """
+    upcoming_dues_params = [today]
+
+    if branch_id:
+        upcoming_dues_query += " AND i.branch_id = ?"
+        upcoming_dues_params.append(branch_id)
+
+    upcoming_dues_query += " ORDER BY parse_date(ip.due_date) ASC LIMIT 50"
+
+    cur.execute(upcoming_dues_query, upcoming_dues_params)
     upcoming_dues = cur.fetchall()
 
     # Calculate totals
@@ -1141,7 +1182,9 @@ def receivables():
         total_past_due=total_past_due,
         total_today_due=total_today_due,
         total_upcoming_due=total_upcoming_due,
-        today=today
+        today=today,
+        branches=branches,
+        branch_id=branch_id
     )
 
 
@@ -2240,7 +2283,9 @@ def overdue_installments_report():
     cur = conn.cursor()
 
     today = datetime.today().strftime("%Y-%m-%d")
+    today_date = datetime.today().date()
     branch_id = request.args.get("branch_id", "").strip()
+    age_range = request.args.get("age_range", "").strip()  # New parameter for age filtering
 
     cur.execute("""
         SELECT *
@@ -2282,11 +2327,10 @@ def overdue_installments_report():
         LEFT JOIN branches AS branch_master
             ON invoices.branch_id = branch_master.id
 
-        WHERE installment_plans.due_date < ?
-          AND installment_plans.status IN ('pending', 'partially_paid')
+        WHERE installment_plans.status IN ('pending', 'partially_paid', 'overdue')
     """
 
-    params = [today]
+    params = []
 
     if branch_id:
         query += " AND invoices.branch_id = ? "
@@ -2297,25 +2341,58 @@ def overdue_installments_report():
     cur.execute(query, params)
     rows = cur.fetchall()
 
-    total_overdue_count = len(rows)
+    total_overdue_count = 0
     total_overdue_amount = 0.0
 
     report_rows = []
 
     for row in rows:
+        due_date_str = row["due_date"]
+        due_date_obj = None
+
+        # Parse the due date
+        try:
+            if len(due_date_str) == 10 and due_date_str[4] == '-':
+                due_date_obj = datetime.strptime(due_date_str, "%Y-%m-%d").date()
+            elif len(due_date_str) == 10 and due_date_str[2] == '-':
+                due_date_obj = datetime.strptime(due_date_str, "%d-%m-%Y").date()
+        except (ValueError, TypeError):
+            continue
+
+        if not due_date_obj:
+            continue
+
+        # Calculate overdue days
+        overdue_days = (today_date - due_date_obj).days
+
+        # Apply age range filter if specified
+        if age_range:
+            if age_range == "current" and overdue_days > 0:
+                continue
+            elif age_range == "1-15" and not (1 <= overdue_days <= 15):
+                continue
+            elif age_range == "16-30" and not (16 <= overdue_days <= 30):
+                continue
+            elif age_range == "31-45" and not (31 <= overdue_days <= 45):
+                continue
+            elif age_range == "above-45" and overdue_days <= 45:
+                continue
+
         amount_due = float(row["amount_due"] or 0)
         amount_paid = float(row["amount_paid"] or 0)
         pending_amount = amount_due - amount_paid
 
-        if pending_amount < 0:
-            pending_amount = 0
+        if pending_amount <= 0:
+            continue
 
+        total_overdue_count += 1
         total_overdue_amount += pending_amount
 
         report_rows.append({
             "id": row["id"],
             "installment_no": row["installment_no"],
             "due_date": row["due_date"],
+            "overdue_days": overdue_days,
             "amount_due": amount_due,
             "amount_paid": amount_paid,
             "pending_amount": pending_amount,
@@ -2342,7 +2419,8 @@ def overdue_installments_report():
         total_overdue_amount=total_overdue_amount,
         today=today,
         branches=branches,
-        branch_id=branch_id
+        branch_id=branch_id,
+        age_range=age_range
     )
 
 
@@ -2392,7 +2470,7 @@ def today_collection_report():
         LEFT JOIN branches AS branch_master
             ON invoices.branch_id = branch_master.id
 
-        WHERE receipts.receipt_date = ?
+        WHERE parse_date(receipts.receipt_date) = ?
     """
 
     params = [today]
