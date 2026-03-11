@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h2>Create Invoice</h2>
+<h2>{% if mode == "edit" %}Edit Invoice{% else %}Create Invoice{% endif %}</h2>
 
 <div class="card compact-card">
   <form method="post" id="invoiceForm">
@@ -13,27 +13,27 @@
         <select name="student_id" id="student_id" required>
           <option value="">Select Student</option>
           {% for s in students %}
-          <option value="{{ s.id }}">{{ s.student_code }} - {{ s.full_name }}</option>
+          <option value="{{ s.id }}" {% if mode == "edit" and invoice.student_id == s.id %}selected{% endif %}>{{ s.student_code }} - {{ s.full_name }}</option>
           {% endfor %}
         </select>
       </div>
 
       <div class="form-group">
         <label>Invoice Date</label>
-        <input type="date" name="invoice_date" value="{{ today }}" required>
+        <input type="date" name="invoice_date" value="{% if mode == 'edit' %}{{ invoice.invoice_date }}{% else %}{{ today }}{% endif %}" required>
       </div>
 
       <div class="form-group">
         <label>Installment Type</label>
         <select name="installment_type" id="installment_type" onchange="toggleInstallmentSections()" required>
-          <option value="full">Full Payment</option>
-          <option value="custom">Custom Installments</option>
+          <option value="full" {% if mode == "edit" and invoice.installment_type == "full" %}selected{% endif %}>Full Payment</option>
+          <option value="custom" {% if mode == "edit" and invoice.installment_type == "custom" %}selected{% endif %}>Custom Installments</option>
         </select>
       </div>
 
       <div class="form-group">
         <label>Full Payment Due Date</label>
-        <input type="date" name="full_due_date" id="full_due_date" value="{{ today }}">
+        <input type="date" name="full_due_date" id="full_due_date" value="{% if installments and installments[0] %}{{ installments[0].due_date }}{% else %}{{ today }}{% endif %}">
       </div>
     </div>
 
@@ -63,6 +63,45 @@
                 </tr>
               </thead>
               <tbody id="itemsTableBody">
+                {% if mode == "edit" and items %}
+                  {% for item in items %}
+                  <tr class="item-row">
+                    <td>
+                      <div class="row-field-stack">
+                        <select name="item_course_id[]" class="item-course tom-course" onchange="handleCourseSelect(this)">
+                          <option value="">Custom Item</option>
+                          {% for c in courses %}
+                          <option value="{{ c.id }}" data-name="{{ c.course_name }}" data-fee="{{ c.fee }}" {% if item.course_id == c.id %}selected{% endif %}>
+                            {{ c.course_name }} - ₹ {{ c.fee }}
+                          </option>
+                          {% endfor %}
+                        </select>
+                        <input type="text" name="item_description[]" placeholder="Fee head / description" required value="{{ item.description }}">
+                      </div>
+                    </td>
+
+                    <td>
+                      <input type="number" name="item_qty[]" class="item-qty" value="{{ item.quantity }}" min="1" step="1" oninput="calculateInvoiceTotals()">
+                    </td>
+
+                    <td>
+                      <input type="number" name="item_rate[]" class="item-rate" value="{{ "%.2f"|format(item.unit_price or 0) }}" min="0" step="0.01" oninput="calculateInvoiceTotals()">
+                    </td>
+
+                    <td>
+                      <input type="number" name="item_discount[]" class="item-discount" value="{% if mode == 'edit' %}{{ "%.2f"|format((item.quantity * item.unit_price) - (item.line_total or 0)) }}{% else %}0{% endif %}" min="0" step="0.01" oninput="calculateInvoiceTotals()">
+                    </td>
+
+                    <td>
+                      <input type="number" name="item_amount[]" class="item-amount" value="{{ "%.2f"|format(item.line_total or 0) }}" readonly>
+                    </td>
+
+                    <td>
+                      <button type="button" class="delete-btn" onclick="removeItemRow(this)">×</button>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                {% else %}
                 <tr class="item-row">
                   <td>
                     <div class="row-field-stack">
@@ -98,22 +137,67 @@
                     <button type="button" class="delete-btn" onclick="removeItemRow(this)">×</button>
                   </td>
                 </tr>
+                {% endif %}
               </tbody>
             </table>
           </div>
         </div>
 
+        <!-- Payment Summary - Edit Mode Only -->
+        {% if mode == "edit" %}
+        <div class="card" style="background-color: #f0f4f8; border-left: 4px solid #2196F3;">
+          <h3 style="margin-top: 0;">Payment Information</h3>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div>
+              <p><strong>Invoice Total:</strong> ₹ {{ "%.2f"|format(invoice.total_amount or 0) }}</p>
+              <p><strong>Amount Paid:</strong> <span style="color: green; font-weight: bold;">₹ {{ "%.2f"|format(total_paid or 0) }}</span></p>
+              <p><strong>Balance Amount:</strong> <span style="color: {% if (invoice.total_amount or 0) - (total_paid or 0) > 0 %}#ff9800{% else %}green{% endif %}; font-weight: bold;">₹ {{ "%.2f"|format((invoice.total_amount or 0) - (total_paid or 0)) }}</span></p>
+            </div>
+            <div>
+              <p><strong>Invoice Date:</strong> {{ invoice.invoice_date }}</p>
+              <p><strong>Student:</strong> {{ invoice.student_code }} - {{ invoice.full_name }}</p>
+              <p><strong>Invoice No:</strong> {{ invoice.invoice_no }}</p>
+            </div>
+          </div>
+
+          {% if installments %}
+          <h4 style="margin-top: 20px;">Current Installment Plan</h4>
+          <table border="1" width="100%" cellpadding="10" class="billing-table" style="margin: 10px 0;">
+            <tr style="background-color: #e3f2fd;">
+              <th>No</th>
+              <th>Due Date</th>
+              <th>Amount Due</th>
+              <th>Amount Paid</th>
+              <th>Status</th>
+              <th>Remarks</th>
+            </tr>
+            {% for ins in installments %}
+            <tr>
+              <td>{{ ins.installment_no }}</td>
+              <td>{{ ins.due_date }}</td>
+              <td>₹ {{ "%.2f"|format(ins.amount_due or 0) }}</td>
+              <td><span style="color: green; font-weight: bold;">₹ {{ "%.2f"|format(ins.amount_paid or 0) }}</span></td>
+              <td>{{ ins.status }}</td>
+              <td>{{ ins.remarks or '-' }}</td>
+            </tr>
+            {% endfor %}
+          </table>
+          <p style="color: #ff9800; margin-top: 10px;"><strong>Note:</strong> Before reducing the invoice total or installment amounts, ensure the new total is not less than the amount already paid (₹ {{ "%.2f"|format(total_paid or 0) }})</p>
+          {% endif %}
+        </div>
+        {% endif %}
+
         <!-- Installment Section -->
         <div class="card" id="custom_installment_section" style="display:none;">
           <div class="table-header-row">
-            <h3>Installment Plan</h3>
+            <h3>{% if mode == "edit" %}Edit Installment Plan{% else %}Installment Plan{% endif %}</h3>
             <div class="installment-tools">
               <select id="quick_split" onchange="applyQuickSplit()">
                 <option value="">Quick Split</option>
                 <option value="2">Split into 2</option>
                 <option value="3">Split into 3</option>
               </select>
-              <input type="number" name="installment_count" id="installment_count" min="1" max="6" value="2" oninput="renderInstallmentRows()" style="width:90px;">
+              <input type="number" name="installment_count" id="installment_count" min="1" max="6" value="{% if mode == 'edit' and installments %}{{ installments|length }}{% else %}2{% endif %}" oninput="renderInstallmentRows()" style="width:90px;">
             </div>
           </div>
 
@@ -129,6 +213,17 @@
                 </tr>
               </thead>
               <tbody id="installmentTableBody">
+                {% if mode == "edit" and installments %}
+                  {% for ins in installments %}
+                  <tr>
+                    <td>{{ ins.installment_no }}</td>
+                    <td><input type="date" name="due_date_{{ ins.installment_no }}" value="{{ ins.due_date }}"></td>
+                    <td><input type="number" step="0.01" name="amount_due_{{ ins.installment_no }}" class="installment-amount" value="{{ "%.2f"|format(ins.amount_due or 0) }}" oninput="updateInstallmentSummary()"></td>
+                    <td><input type="text" name="remarks_{{ ins.installment_no }}" placeholder="Installment {{ ins.installment_no }} remarks" value="{{ ins.remarks or '' }}"></td>
+                    <td><button type="button" class="delete-btn" onclick="removeInstallmentRow(this)">×</button></td>
+                  </tr>
+                  {% endfor %}
+                {% endif %}
               </tbody>
             </table>
           </div>
@@ -138,7 +233,7 @@
         <div class="card">
           <div class="form-group">
             <label>Notes</label>
-            <textarea name="notes" rows="3" placeholder="Optional notes"></textarea>
+            <textarea name="notes" rows="3" placeholder="Optional notes">{% if mode == "edit" and invoice %}{{ invoice.notes or '' }}{% endif %}</textarea>
           </div>
         </div>
       </div>
@@ -150,24 +245,24 @@
 
           <div class="summary-line">
             <span>Subtotal</span>
-            <strong>₹ <span id="summary_subtotal">0.00</span></strong>
+            <strong>₹ <span id="summary_subtotal">{% if mode == 'edit' and invoice %}{{ "%.2f"|format(invoice.subtotal or 0) }}{% else %}0.00{% endif %}</span></strong>
           </div>
 
           <div class="summary-line">
             <span>Total Discount</span>
-            <strong>₹ <span id="summary_discount">0.00</span></strong>
+            <strong>₹ <span id="summary_discount">{% if mode == 'edit' and invoice %}{{ "%.2f"|format(invoice.discount_amount or 0) }}{% else %}0.00{% endif %}</span></strong>
           </div>
 
           <div class="summary-line total-line">
             <span>Net Total</span>
-            <strong>₹ <span id="summary_total">0.00</span></strong>
+            <strong>₹ <span id="summary_total">{% if mode == 'edit' and invoice %}{{ "%.2f"|format(invoice.total_amount or 0) }}{% else %}0.00{% endif %}</span></strong>
           </div>
 
           <hr>
 
           <div class="summary-line">
             <span>Installment Total</span>
-            <strong>₹ <span id="installment_total">0.00</span></strong>
+            <strong>₹ <span id="installment_total">{% if mode == 'edit' and invoice %}{{ "%.2f"|format(invoice.total_amount or 0) }}{% else %}0.00{% endif %}</span></strong>
           </div>
 
           <div class="summary-line">
@@ -181,7 +276,7 @@
           </div>
 
           <div class="summary-actions">
-            <button type="submit" class="btn btn-primary save-btn">Save Invoice</button>
+            <button type="submit" class="btn btn-primary save-btn">{% if mode == "edit" %}Save Changes{% else %}Save Invoice{% endif %}</button>
           </div>
         </div>
       </div>
@@ -474,9 +569,14 @@ document.getElementById("invoiceForm").addEventListener("submit", function(e) {
 window.onload = function() {
     calculateInvoiceTotals();
     toggleInstallmentSections();
+    {% if mode == "edit" %}
+    initStudentTomSelect();
+    {% else %}
     renderInstallmentRows();
     initStudentTomSelect();
+    {% endif %}
     initAllCourseTomSelects();
+    updateInstallmentSummary();
 };
 
 document.addEventListener("keydown", function(e) {

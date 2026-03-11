@@ -4,6 +4,7 @@
 <h2>Invoice Details</h2>
 
 <div class="page-actions">
+  <a class="btn btn-warning" href="{{ url_for('invoice_edit', invoice_id=invoice.id) }}">Edit Invoice</a>
   <a class="btn btn-primary" href="{{ url_for('payment_new', invoice_id=invoice.id) }}">+ Record Payment</a>
   <button class="btn btn-secondary" onclick="window.print()"> Print Invoice </button>
 </div>
@@ -86,32 +87,22 @@
   <h3>Payments</h3>
   <table border="1" width="100%" cellpadding="10" class="billing-table">
     <tr>
-      <th>ID</th>
+      <th>Receipt No</th>
       <th>Date</th>
       <th>Amount</th>
-      <th>Mode</th>
-      <th>Reference No</th>
-      <th>Collected By</th>
-      <th>Notes</th>
-      <th>Receipt</th>
+      <th>Created By</th>
     </tr>
 
     {% for p in payments %}
     <tr>
-      <td>{{ p.id }}</td>
-      <td>{{ p.payment_date }}</td>
-      <td>₹ {{ "%.2f"|format(p.amount_paid or 0) }}</td>
-      <td>{{ p.payment_mode }}</td>
-      <td>{{ p.reference_no }}</td>
-      <td>{{ p.collected_by_name }}</td>
-      <td>{{ p.notes }}</td>
-      <td>
-        <a href="{{ url_for('receipt_view', payment_id=p.id) }}">View Receipt</a>
-      </td>
+      <td>{{ p.receipt_no }}</td>
+      <td>{{ p.receipt_date }}</td>
+      <td>₹ {{ "%.2f"|format(p.amount_received or 0) }}</td>
+      <td>{{ p.created_by_name }}</td>
     </tr>
     {% else %}
     <tr>
-      <td colspan="8" style="text-align:center;">No payments recorded yet.</td>
+      <td colspan="4" style="text-align:center;">No payments recorded yet.</td>
     </tr>
     {% endfor %}
   </table>

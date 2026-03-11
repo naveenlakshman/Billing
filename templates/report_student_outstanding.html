@@ -19,6 +19,9 @@
 
     <div class="form-group" style="align-self:end;">
       <button type="submit" class="btn btn-primary">Filter</button>
+      <a href="{{ url_for('download_student_outstanding', branch_id=branch_id or '') }}" class="btn btn-success">
+        Download CSV
+      </a>
     </div>
   </form>
 </div>

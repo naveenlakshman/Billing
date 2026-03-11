@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Record Payment / Receipt</h2>
+
+<div class="card">
+  <form method="POST" action="{{ url_for('payment_new', invoice_id=invoice.id) }}">
+    <div class="form-group">
+      <label>Invoice No:</label>
+      <input type="text" value="{{ invoice.invoice_no }}" disabled class="form-control">
+    </div>
+
+    <div class="form-group">
+      <label>Student:</label>
+      <input type="text" value="{{ invoice.full_name }}" disabled class="form-control">
+    </div>
+
+    <div class="form-group">
+      <label>Invoice Amount:</label>
+      <input type="text" value="₹ {{ "%.2f"|format(invoice.total_amount or 0) }}" disabled class="form-control">
+    </div>
+
+    <div class="form-group">
+      <label>Total Paid:</label>
+      <input type="text" value="₹ {{ "%.2f"|format(total_paid or 0) }}" disabled class="form-control">
+    </div>
+
+    <div class="form-group">
+      <label style="color: #d9534f; font-weight: bold;">Balance Amount:</label>
+      <input type="text" value="₹ {{ "%.2f"|format(balance_amount or 0) }}" disabled class="form-control" style="background-color: #fff3cd; font-weight: bold;">
+    </div>
+
+    <div class="form-group">
+      <label for="receipt_date">Receipt Date: <span style="color: red;">*</span></label>
+      <input type="date" id="receipt_date" name="receipt_date" class="form-control" required>
+    </div>
+
+    <div class="form-group">
+      <label for="amount_received">Amount Received: <span style="color: red;">*</span></label>
+      <input type="number" id="amount_received" name="amount_received" step="0.01" min="0.01" max="{{ "%.2f"|format(balance_amount or 0) }}" class="form-control" required placeholder="Enter amount (max: ₹{{ "%.2f"|format(balance_amount or 0) }})">
+    </div>
+
+    <div class="form-group">
+      <button type="submit" class="btn btn-primary">Record Payment</button>
+      <a href="{{ url_for('invoice_view', invoice_id=invoice.id) }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<script>
+  // Auto-fill today's date
+  document.getElementById('receipt_date').valueAsDate = new Date();
+
+  const balanceAmount = {{ balance_amount or 0 }};
+  const amountInput = document.getElementById('amount_received');
+
+  // Real-time validation
+  amountInput.addEventListener('change', function() {
+    const amount = parseFloat(this.value) || 0;
+
+    if (amount > balanceAmount) {
+      alert(`Amount cannot exceed balance amount of ₹${balanceAmount.toFixed(2)}. Please enter an amount <= ₹${balanceAmount.toFixed(2)}`);
+      this.value = '';
+      this.focus();
+    }
+  });
+
+  // Form submission validation
+  document.querySelector('form').addEventListener('submit', function(e) {
+    const amount = parseFloat(amountInput.value) || 0;
+
+    if (amount <= 0) {
+      alert('Please enter a valid amount greater than 0');
+      e.preventDefault();
+      return false;
+    }
+
+    if (amount > balanceAmount) {
+      alert(`Amount cannot exceed balance amount of ₹${balanceAmount.toFixed(2)}`);
+      amountInput.focus();
+      e.preventDefault();
+      return false;
+    }
+  });
+</script>
+{% endblock %}

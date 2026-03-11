@@ -19,6 +19,7 @@
 <th>Course Name</th>
 <th>Duration</th>
 <th>Fee</th>
+<th>Actions</th>
 </tr>
 
 {% for c in courses %}
@@ -28,6 +29,11 @@
 <td>{{ c.course_name }}</td>
 <td>{{ c.duration }}</td>
 <td>₹ {{ c.fee }}</td>
+<td>
+<a class="btn btn-secondary btn-sm" href="{{ url_for('course_edit', id=c.id) }}">
+  Edit
+</a>
+</td>
 </tr>
 
 {% endfor %}
