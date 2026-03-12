@@ -26,6 +26,28 @@ QUALIFICATION_LEVELS = {
     'Postgraduate': ['MA', 'MBA', 'MCom', 'Masters']
 }
 
+# Custom Jinja filter to format dates for HTML date input (YYYY-MM-DD)
+@app.template_filter('format_date_input')
+def format_date_input(date_str):
+    if not date_str:
+        return ""
+    try:
+        # If date contains dashes, split and check format
+        if '-' in date_str:
+            parts = date_str.split('-')
+            if len(parts) == 3:
+                # Check if it's DD-MM-YYYY (first part <= 31) or YYYY-MM-DD (first part > 31)
+                first_part = int(parts[0])
+                if first_part <= 31:
+                    # DD-MM-YYYY format, convert to YYYY-MM-DD
+                    return f"{parts[2]}-{parts[1]}-{parts[0]}"
+                else:
+                    # Already YYYY-MM-DD
+                    return date_str
+    except:
+        pass
+    return date_str
+
 
 def login_required(route_function):
     @wraps(route_function)
@@ -63,6 +85,48 @@ def safe_log_activity(user_id=None, branch_id=None, action_type="", module_name=
     except Exception as e:
         print("Activity log error:", e)
 
+
+def generate_receipt_number(cur):
+    """Generate receipt number with GIT/P/YY/NNNNN format similar to invoice numbering"""
+    from datetime import datetime
+    
+    current_year = datetime.now().strftime("%y")
+    
+    # Get the last receipt with GIT/P/ and current year prefix
+    cur.execute("""
+        SELECT receipt_no FROM receipts 
+        WHERE receipt_no LIKE 'GIT/P/%'
+        ORDER BY receipt_no DESC LIMIT 1
+    """)
+    result = cur.fetchone()
+    
+    if result and result["receipt_no"]:
+        existing_no = result["receipt_no"]
+        try:
+            # Extract parts (e.g., "GIT/P/25/618" -> ["GIT", "P", "25", "618"])
+            parts = existing_no.split('/')
+            if len(parts) >= 4:
+                last_year = parts[2]
+                numeric_part = int(parts[3])
+                
+                # If year matches, increment the number, otherwise start from 1
+                if last_year == current_year:
+                    next_number = numeric_part + 1
+                else:
+                    next_number = 1
+                
+                receipt_no = f"GIT/P/{current_year}/{next_number}"
+            else:
+                # Fallback format
+                receipt_no = f"GIT/P/{current_year}/1"
+        except (ValueError, IndexError, TypeError):
+            # Fallback format
+            receipt_no = f"GIT/P/{current_year}/1"
+    else:
+        # First receipt
+        receipt_no = f"GIT/P/{current_year}/1"
+    
+    return receipt_no
 
 
 
@@ -2149,10 +2213,8 @@ def payment_new():
                 conn.close()
                 return redirect(url_for("payment_new", invoice_id=invoice_id))
 
-            # Generate receipt number
-            cur.execute("SELECT MAX(id) as max_id FROM receipts")
-            max_id = cur.fetchone()["max_id"] or 0
-            receipt_no = f"RCP{max_id + 1:05d}"
+            # Generate receipt number with GIT/P/ format
+            receipt_no = generate_receipt_number(cur)
 
             payment_mode = request.form.get("payment_mode", "cash")
             notes = request.form.get("notes", "").strip()
@@ -2339,6 +2401,46 @@ def receipts():
     conn.close()
     
     return render_template("receipts.html", receipts=all_receipts, search=search)
+
+
+@app.route("/receipt/<int:receipt_id>")
+@login_required
+def receipt_view(receipt_id):
+    conn = get_conn()
+    cur = conn.cursor()
+    
+    # Fetch the receipt with all details
+    cur.execute("""
+        SELECT
+            receipts.*,
+            invoices.id AS invoice_id,
+            invoices.invoice_no,
+            invoices.total_amount,
+            invoices.invoice_date,
+            students.student_code,
+            students.full_name,
+            students.phone,
+            students.email,
+            students.address,
+            users.full_name AS created_by_name,
+            branches.branch_name
+        FROM receipts
+        JOIN invoices ON receipts.invoice_id = invoices.id
+        JOIN students ON invoices.student_id = students.id
+        LEFT JOIN users ON receipts.created_by = users.id
+        LEFT JOIN branches ON invoices.branch_id = branches.id
+        WHERE receipts.id = ?
+    """, (receipt_id,))
+    receipt = cur.fetchone()
+    
+    if not receipt:
+        conn.close()
+        flash("Receipt not found.", "danger")
+        return redirect(url_for("receipts"))
+    
+    conn.close()
+    
+    return render_template("receipt_view.html", receipt=receipt)
 
 
 @app.route("/receipt/<int:receipt_id>/edit", methods=["GET", "POST"])

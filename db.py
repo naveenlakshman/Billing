@@ -281,6 +281,52 @@ def init_db():
     # Add notes column if it doesn't exist
     add_column_if_not_exists(cur, "receipts", "notes", "TEXT")
     
+    # Migrate old RCP format receipts to GIT/P/ format
+    try:
+        cur.execute("SELECT id, receipt_no FROM receipts WHERE receipt_no LIKE 'RCP%' ORDER BY id ASC")
+        old_receipts = cur.fetchall()
+        
+        if old_receipts:
+            # Get the year to use for new receipt numbers
+            year = datetime.now().strftime("%y")
+            
+            for idx, receipt in enumerate(old_receipts, 1):
+                new_receipt_no = f"GIT/P/{year}/{idx}"
+                cur.execute("""
+                    UPDATE receipts
+                    SET receipt_no = ?
+                    WHERE id = ?
+                """, (new_receipt_no, receipt['id']))
+    except:
+        pass  # Migration might fail if no old receipts, that's okay
+    
+    # Standardize receipt dates to YYYY-MM-DD format
+    try:
+        cur.execute("SELECT id, receipt_date FROM receipts WHERE receipt_date IS NOT NULL")
+        receipt_dates = cur.fetchall()
+        
+        for receipt in receipt_dates:
+            date_str = receipt['receipt_date']
+            # Try to parse DD-MM-YYYY format and convert to YYYY-MM-DD
+            if '-' in date_str:
+                parts = date_str.split('-')
+                if len(parts) == 3:
+                    try:
+                        first_part = int(parts[0])
+                        # If first part <= 31, it's DD-MM-YYYY, convert to YYYY-MM-DD
+                        if first_part <= 31:
+                            day, month, year_val = parts
+                            normalized_date = f"{year_val}-{month}-{day}"
+                            cur.execute("""
+                                UPDATE receipts
+                                SET receipt_date = ?
+                                WHERE id = ?
+                            """, (normalized_date, receipt['id']))
+                    except:
+                        pass
+    except:
+        pass  # Standardization might fail, that's okay
+    
     # Check if table exists and has payment_id column
     if "payment_id" in receipts_columns:
         # payment_id column exists, we need to recreate without it

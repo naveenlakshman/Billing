@@ -1,100 +1,299 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="page-actions no-print">
-  <button class="btn btn-primary" onclick="window.print()">Print Receipt</button>
-  <a class="btn" href="{{ url_for('invoice_view', invoice_id=receipt.invoice_id) }}">Back to Invoice</a>
+<div class="receipt-container">
+  <div class="receipt-actions">
+    <button onclick="window.print()" class="btn btn-primary">🖨️ Print Receipt</button>
+    {% if session.get("role") == "admin" %}
+    <a href="{{ url_for('receipt_edit', receipt_id=receipt.id) }}" class="btn btn-secondary">✎ Edit</a>
+    {% endif %}
+    <a href="{{ url_for('receipts') }}" class="btn btn-secondary">← Back</a>
+  </div>
+
+  <div class="receipt-paper">
+    <!-- Header -->
+    <div class="receipt-header">
+      <div class="receipt-title">RECEIPT</div>
+      <div class="receipt-info">
+        <div><strong>Receipt No:</strong> {{ receipt.receipt_no }}</div>
+        <div><strong>Date:</strong> {{ receipt.receipt_date }}</div>
+      </div>
+    </div>
+
+    <!-- Organization Info -->
+    <div class="receipt-org-info">
+      <div class="org-name">Global IT Education</div>
+      {% if receipt.branch_name %}
+        <div class="org-branch">{{ receipt.branch_name }}</div>
+      {% endif %}
+    </div>
+
+    <!-- Student Details -->
+    <div class="receipt-section">
+      <div class="section-title">Student Details</div>
+      <div class="detail-row">
+        <div class="label">Student Code:</div>
+        <div class="value">{{ receipt.student_code }}</div>
+      </div>
+      <div class="detail-row">
+        <div class="label">Student Name:</div>
+        <div class="value">{{ receipt.full_name }}</div>
+      </div>
+      {% if receipt.phone %}
+      <div class="detail-row">
+        <div class="label">Phone:</div>
+        <div class="value">{{ receipt.phone }}</div>
+      </div>
+      {% endif %}
+      {% if receipt.email %}
+      <div class="detail-row">
+        <div class="label">Email:</div>
+        <div class="value">{{ receipt.email }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Invoice Details -->
+    <div class="receipt-section">
+      <div class="section-title">Invoice Details</div>
+      <div class="detail-row">
+        <div class="label">Invoice No:</div>
+        <div class="value">{{ receipt.invoice_no }}</div>
+      </div>
+      <div class="detail-row">
+        <div class="label">Invoice Date:</div>
+        <div class="value">{{ receipt.invoice_date }}</div>
+      </div>
+      <div class="detail-row">
+        <div class="label">Invoice Amount:</div>
+        <div class="value">₹ {{ "%.2f"|format(receipt.total_amount or 0) }}</div>
+      </div>
+    </div>
+
+    <!-- Payment Details -->
+    <div class="receipt-section">
+      <div class="section-title">Payment Details</div>
+      <div class="detail-row">
+        <div class="label">Amount Received:</div>
+        <div class="value amount-highlight">₹ {{ "%.2f"|format(receipt.amount_received or 0) }}</div>
+      </div>
+      <div class="detail-row">
+        <div class="label">Payment Mode:</div>
+        <div class="value">
+          {% set mode_labels = {
+            'cash': 'Cash',
+            'upi': 'UPI',
+            'bank_transfer': 'Bank Transfer',
+            'card': 'Card'
+          } %}
+          {{ mode_labels.get(receipt.payment_mode, receipt.payment_mode) }}
+        </div>
+      </div>
+      {% if receipt.notes %}
+      <div class="detail-row">
+        <div class="label">Reference No:</div>
+        <div class="value">{{ receipt.notes }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Created By -->
+    <div class="receipt-section">
+      <div class="detail-row">
+        <div class="label">Recorded By:</div>
+        <div class="value">{{ receipt.created_by_name or 'System' }}</div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="receipt-footer">
+      <div class="footer-text">Thank you for your payment</div>
+      <div class="footer-text smaller">This is a computer-generated receipt</div>
+    </div>
+  </div>
 </div>
 
-<div class="receipt-sheet">
-  <div class="receipt-header">
-    <h1>Global IT Education</h1>
-    <p>Billing Software Receipt</p>
-  </div>
+<style>
+  .receipt-container {
+    max-width: 800px;
+    margin: 20px auto;
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+  }
 
-  <div class="receipt-title-row">
-    <h2>Payment Receipt</h2>
-    <div class="receipt-no-box">
-      <p><strong>Receipt No:</strong> {{ receipt.receipt_no }}</p>
-      <p><strong>Receipt Date:</strong> {{ receipt.receipt_date }}</p>
-    </div>
-  </div>
+  .receipt-actions {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #ddd;
+  }
 
-  <div class="receipt-grid">
-    <div class="receipt-card">
-      <h3>Student Details</h3>
-      <p><strong>Student Code:</strong> {{ receipt.student_code }}</p>
-      <p><strong>Name:</strong> {{ receipt.full_name }}</p>
-      <p><strong>Phone:</strong> {{ receipt.phone or "-" }}</p>
-      <p><strong>Email:</strong> {{ receipt.email or "-" }}</p>
-    </div>
+  .receipt-paper {
+    background: white;
+    padding: 30px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-family: 'Georgia', serif;
+    max-width: 100%;
+  }
 
-    <div class="receipt-card">
-      <h3>Invoice Details</h3>
-      <p><strong>Invoice No:</strong> {{ receipt.invoice_no }}</p>
-      <p><strong>Invoice Date:</strong> {{ receipt.invoice_date }}</p>
-      <p><strong>Total Invoice Amount:</strong> ₹ {{ "%.2f"|format(total_invoice_amount or 0) }}</p>
-    </div>
-  </div>
+  .receipt-header {
+    text-align: center;
+    margin-bottom: 30px;
+    border-bottom: 2px solid #333;
+    padding-bottom: 15px;
+  }
 
-  <div class="receipt-card">
-    <h3>Payment Details</h3>
-    <table class="billing-table" width="100%">
-      <tr>
-        <th>Payment ID</th>
-        <th>Payment Date</th>
-        <th>Payment Mode</th>
-        <th>Reference No</th>
-        <th>Amount Received</th>
-      </tr>
-      <tr>
-        <td>{{ receipt.payment_id }}</td>
-        <td>{{ receipt.payment_date }}</td>
-        <td>{{ receipt.payment_mode }}</td>
-        <td>{{ receipt.reference_no or "-" }}</td>
-        <td>₹ {{ "%.2f"|format(amount_received or 0) }}</td>
-      </tr>
-    </table>
-  </div>
+  .receipt-title {
+    font-size: 24px;
+    font-weight: bold;
+    color: #1e3a8a;
+    margin-bottom: 10px;
+  }
 
-  <div class="receipt-card">
-    <h3>Fee Summary</h3>
-    <div class="summary-line">
-      <span>Total Invoice Amount</span>
-      <strong>₹ {{ "%.2f"|format(total_invoice_amount or 0) }}</strong>
-    </div>
-    <div class="summary-line">
-      <span>Amount Received</span>
-      <strong>₹ {{ "%.2f"|format(amount_received or 0) }}</strong>
-    </div>
-    <div class="summary-line">
-      <span>Total Paid</span>
-      <strong>₹ {{ "%.2f"|format(total_paid or 0) }}</strong>
-    </div>
-    <div class="summary-line total-line">
-      <span>Balance Amount</span>
-      <strong>₹ {{ "%.2f"|format(balance_amount or 0) }}</strong>
-    </div>
-  </div>
+  .receipt-info {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    font-size: 14px;
+  }
 
-  <div class="receipt-card">
-    <h3>Amount in Words</h3>
-    <p><strong>{{ amount_in_words }}</strong></p>
-  </div>
+  .receipt-org-info {
+    text-align: center;
+    margin-bottom: 25px;
+  }
 
-  <div class="receipt-card">
-    <h3>Notes</h3>
-    <p>{{ receipt.notes or "No notes." }}</p>
-  </div>
+  .org-name {
+    font-size: 18px;
+    font-weight: bold;
+    color: #333;
+  }
 
-  <div class="receipt-footer">
-    <div>
-      <p><strong>Collected By:</strong> {{ receipt.collected_by_name or "-" }}</p>
-    </div>
+  .org-branch {
+    font-size: 12px;
+    color: #666;
+    margin-top: 5px;
+  }
 
-    <div class="signature-box">
-      <p>Authorized Signature</p>
-    </div>
-  </div>
-</div>
+  .receipt-section {
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #eee;
+  }
+
+  .receipt-section:last-of-type {
+    border-bottom: 2px solid #333;
+  }
+
+  .section-title {
+    font-size: 14px;
+    font-weight: bold;
+    color: #1e3a8a;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+
+  .detail-row:last-child {
+    margin-bottom: 0;
+  }
+
+  .label {
+    font-weight: 500;
+    color: #333;
+    min-width: 200px;
+  }
+
+  .value {
+    text-align: right;
+    color: #555;
+    flex: 1;
+  }
+
+  .amount-highlight {
+    font-size: 16px;
+    font-weight: bold;
+    color: #27ae60;
+  }
+
+  .receipt-footer {
+    text-align: center;
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid #ddd;
+  }
+
+  .footer-text {
+    font-size: 12px;
+    color: #666;
+    margin: 5px 0;
+  }
+
+  .footer-text.smaller {
+    font-size: 10px;
+    color: #999;
+  }
+
+  .btn {
+    padding: 10px 20px;
+    margin-right: 10px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    text-decoration: none;
+    display: inline-block;
+  }
+
+  .btn-primary {
+    background-color: #1e3a8a;
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background-color: #1e40af;
+  }
+
+  .btn-secondary {
+    background-color: #6b7280;
+    color: white;
+  }
+
+  .btn-secondary:hover {
+    background-color: #4b5563;
+  }
+
+  /* Print styles */
+  @media print {
+    .receipt-actions {
+      display: none;
+    }
+
+    .receipt-container {
+      margin: 0;
+      padding: 0;
+      background: none;
+    }
+
+    .receipt-paper {
+      border: none;
+      box-shadow: none;
+      padding: 0;
+      max-width: 100%;
+    }
+
+    body {
+      background: white;
+    }
+  }
+</style>
 {% endblock %}

@@ -41,7 +41,11 @@
 
 <td>{{ receipt.id }}</td>
 
-<td>{{ receipt.receipt_no }}</td>
+<td>
+<a href="{{ url_for('receipt_view', receipt_id=receipt.id) }}">
+{{ receipt.receipt_no }}
+</a>
+</td>
 
 <td>
 <a href="{{ url_for('invoice_view', invoice_id=receipt.invoice_id) }}">
@@ -74,7 +78,11 @@
 <td>{{ receipt.created_by_name or 'System' }}</td>
 
 <td>
+{% if session.get("role") == "admin" %}
 <a href="{{ url_for('receipt_edit', receipt_id=receipt.id) }}">Edit</a>
+{% else %}
+-
+{% endif %}
 </td>
 
 </tr>
