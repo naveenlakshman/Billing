@@ -1,6 +1,6 @@
-receipt_no,invoice_number,receipt_date,amount_received,payment_mode
-GIT/R/25/001,GIT/B/001,2025-04-15,3493,cash
-GIT/R/25/002,GIT/B/001,2025-05-15,4000,upi
-GIT/R/25/003,GIT/B/002,2025-04-02,4000,bank_transfer
-GIT/R/25/004,GIT/B/003,2025-05-05,4000,card
-GIT/R/25/005,GIT/B/004,2025-06-04,3500,cash
+receipt_no,invoice_number,receipt_date,amount_received,payment_mode,notes
+GIT/R/25/001,GIT/B/001,2025-04-15,3493,cash,
+GIT/R/25/002,GIT/B/001,2025-05-15,4000,upi,UTR123456789
+GIT/R/25/003,GIT/B/002,2025-04-02,4000,bank_transfer,TXN987654321
+GIT/R/25/004,GIT/B/003,2025-05-05,4000,card,
+GIT/R/25/005,GIT/B/004,2025-06-04,3500,cash,
