@@ -275,6 +275,9 @@ def init_db():
     """)
     receipts_columns = {row[1]: row for row in cur.fetchall()}
     
+    # Add payment_mode column if it doesn't exist
+    add_column_if_not_exists(cur, "receipts", "payment_mode", "TEXT DEFAULT 'cash'")
+    
     # Check if table exists and has payment_id column
     if "payment_id" in receipts_columns:
         # payment_id column exists, we need to recreate without it

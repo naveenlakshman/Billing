@@ -2154,21 +2154,25 @@ def payment_new():
             max_id = cur.fetchone()["max_id"] or 0
             receipt_no = f"RCP{max_id + 1:05d}"
 
+            payment_mode = request.form.get("payment_mode", "cash")
+
             cur.execute("""
                 INSERT INTO receipts (
                     receipt_no,
                     invoice_id,
                     receipt_date,
                     amount_received,
+                    payment_mode,
                     created_by,
                     created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 receipt_no,
                 invoice_id,
                 request.form.get("receipt_date"),
                 amount_received,
+                payment_mode,
                 session.get("user_id"),
                 now
             ))
@@ -4521,6 +4525,7 @@ def import_receipts_page():
                     invoice_number = row.get('invoice_number', '').strip()
                     receipt_date = row.get('receipt_date', '').strip()
                     amount_received = row.get('amount_received', '').strip()
+                    payment_mode = row.get('payment_mode', 'cash').strip().lower()
                     
                     # Validate required fields
                     if not receipt_no or not invoice_number or not receipt_date or not amount_received:
@@ -4530,6 +4535,11 @@ def import_receipts_page():
                         })
                         row_num += 1
                         continue
+                    
+                    # Validate payment_mode
+                    valid_payment_modes = ['cash', 'upi', 'bank_transfer', 'card']
+                    if payment_mode not in valid_payment_modes:
+                        payment_mode = 'cash'  # Default to cash if invalid
                     
                     # Check if receipt already exists
                     cur.execute("SELECT id FROM receipts WHERE receipt_no = ?", (receipt_no,))
@@ -4573,15 +4583,17 @@ def import_receipts_page():
                             invoice_id,
                             receipt_date,
                             amount_received,
+                            payment_mode,
                             created_by,
                             created_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, (
                         receipt_no,
                         invoice_id,
                         receipt_date,
                         amount_received,
+                        payment_mode,
                         admin_id,
                         now
                     ))
