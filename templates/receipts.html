@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Receipts</h2>
+
+<div class="card">
+  <form method="get" class="search-form">
+    <input
+      type="text"
+      name="search"
+      value="{{ search or '' }}"
+      placeholder="Search by receipt no, invoice no, or student name"
+    >
+    <button type="submit" class="btn btn-primary">Search</button>
+
+    {% if search %}
+    <a href="{{ url_for('receipts') }}" class="btn">Clear</a>
+    {% endif %}
+  </form>
+</div>
+
+<div class="card">
+  <table border="1" width="100%" cellpadding="10" class="billing-table">
+
+<tr>
+<th>ID</th>
+<th>Receipt No</th>
+<th>Invoice No</th>
+<th>Student</th>
+<th>Date</th>
+<th>Amount</th>
+<th>Payment Mode</th>
+<th>Notes</th>
+<th>Created By</th>
+<th>Action</th>
+</tr>
+
+{% for receipt in receipts %}
+
+<tr>
+
+<td>{{ receipt.id }}</td>
+
+<td>{{ receipt.receipt_no }}</td>
+
+<td>
+<a href="{{ url_for('invoice_view', invoice_id=receipt.invoice_id) }}">
+{{ receipt.invoice_no }}
+</a>
+</td>
+
+<td>
+{{ receipt.full_name }}
+</td>
+
+<td>{{ receipt.receipt_date }}</td>
+
+<td style="color:green;">
+₹ {{ "%.2f"|format(receipt.amount_received or 0) }}
+</td>
+
+<td>
+{% set mode_labels = {
+  'cash': 'Cash',
+  'upi': 'UPI',
+  'bank_transfer': 'Bank Transfer',
+  'card': 'Card'
+} %}
+{{ mode_labels.get(receipt.payment_mode, receipt.payment_mode) }}
+</td>
+
+<td>{{ receipt.notes or '-' }}</td>
+
+<td>{{ receipt.created_by_name or 'System' }}</td>
+
+<td>
+<a href="{{ url_for('receipt_edit', receipt_id=receipt.id) }}">Edit</a>
+</td>
+
+</tr>
+
+{% endfor %}
+
+</table>
+</div>
+{% endblock %}

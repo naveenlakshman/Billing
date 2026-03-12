@@ -2291,6 +2291,178 @@ def payment_new():
     )
 
 
+@app.route("/receipts")
+@login_required
+def receipts():
+    search = request.args.get("search", "").strip()
+    
+    conn = get_conn()
+    cur = conn.cursor()
+    
+    query = """
+    SELECT
+        receipts.id,
+        receipts.receipt_no,
+        receipts.receipt_date,
+        receipts.amount_received,
+        receipts.payment_mode,
+        receipts.notes,
+        invoices.id AS invoice_id,
+        invoices.invoice_no,
+        students.full_name,
+        users.full_name AS created_by_name
+    FROM receipts
+    JOIN invoices ON receipts.invoice_id = invoices.id
+    JOIN students ON invoices.student_id = students.id
+    LEFT JOIN users ON receipts.created_by = users.id
+    """
+    
+    params = []
+    
+    if search:
+        query += """
+        WHERE
+            receipts.receipt_no LIKE ?
+            OR invoices.invoice_no LIKE ?
+            OR students.full_name LIKE ?
+        """
+        like = f"%{search}%"
+        params.extend([like, like, like])
+    
+    query += """
+    ORDER BY receipts.id DESC
+    """
+    
+    cur.execute(query, params)
+    all_receipts = cur.fetchall()
+    
+    conn.close()
+    
+    return render_template("receipts.html", receipts=all_receipts, search=search)
+
+
+@app.route("/receipt/<int:receipt_id>/edit", methods=["GET", "POST"])
+@login_required
+@admin_required
+def receipt_edit(receipt_id):
+    conn = get_conn()
+    cur = conn.cursor()
+    
+    # Fetch the receipt
+    cur.execute("""
+        SELECT
+            receipts.*,
+            invoices.invoice_no,
+            students.full_name
+        FROM receipts
+        JOIN invoices ON receipts.invoice_id = invoices.id
+        JOIN students ON invoices.student_id = students.id
+        WHERE receipts.id = ?
+    """, (receipt_id,))
+    receipt = cur.fetchone()
+    
+    if not receipt:
+        conn.close()
+        flash("Receipt not found.", "danger")
+        return redirect(url_for("receipts"))
+    
+    if request.method == "POST":
+        try:
+            from datetime import datetime
+            now = datetime.now().isoformat(timespec="seconds")
+            
+            receipt_date = request.form.get("receipt_date")
+            amount_received = float(request.form.get("amount_received", 0))
+            payment_mode = request.form.get("payment_mode", "cash")
+            notes = request.form.get("notes", "").strip()
+            
+            # Validate amount
+            if amount_received <= 0:
+                flash("Amount must be greater than 0", "danger")
+                return redirect(url_for("receipt_edit", receipt_id=receipt_id))
+            
+            # Get invoice total to validate amount
+            cur.execute("""
+                SELECT total_amount FROM invoices WHERE id = ?
+            """, (receipt["invoice_id"],))
+            invoice_total = cur.fetchone()["total_amount"]
+            
+            # Get total paid excluding this receipt
+            cur.execute("""
+                SELECT IFNULL(SUM(amount_received), 0) AS total_received
+                FROM receipts
+                WHERE invoice_id = ? AND id != ?
+            """, (receipt["invoice_id"], receipt_id))
+            other_receipts_total = float(cur.fetchone()["total_received"] or 0)
+            
+            # Check if new amount doesn't exceed invoice total
+            if (amount_received + other_receipts_total) > invoice_total:
+                flash(f"Total receipts cannot exceed invoice amount of ₹{invoice_total:.2f}", "danger")
+                return redirect(url_for("receipt_edit", receipt_id=receipt_id))
+            
+            # Update receipt
+            cur.execute("""
+                UPDATE receipts
+                SET
+                    receipt_date = ?,
+                    amount_received = ?,
+                    payment_mode = ?,
+                    notes = ?
+                WHERE id = ?
+            """, (
+                receipt_date,
+                amount_received,
+                payment_mode,
+                notes,
+                receipt_id
+            ))
+            
+            # Recalculate invoice status
+            cur.execute("""
+                SELECT IFNULL(SUM(amount_received), 0) AS total_received
+                FROM receipts
+                WHERE invoice_id = ?
+            """, (receipt["invoice_id"],))
+            total_received = float(cur.fetchone()["total_received"] or 0)
+            
+            if total_received >= invoice_total:
+                new_status = "paid"
+            elif total_received > 0:
+                new_status = "partially_paid"
+            else:
+                new_status = "unpaid"
+            
+            cur.execute("""
+                UPDATE invoices
+                SET status = ?, updated_at = ?
+                WHERE id = ?
+            """, (new_status, now, receipt["invoice_id"]))
+            
+            conn.commit()
+            conn.close()
+            
+            safe_log_activity(
+                user_id=session.get("user_id"),
+                action_type="update",
+                module_name="receipt",
+                record_id=receipt_id,
+                description=f"Updated receipt {receipt['receipt_no']}"
+            )
+            
+            flash(f"Receipt {receipt['receipt_no']} updated successfully.", "success")
+            return redirect(url_for("receipt_edit", receipt_id=receipt_id))
+            
+        except Exception as e:
+            conn.rollback()
+            conn.close()
+            flash(f"Error while updating receipt: {str(e)}", "danger")
+            return redirect(url_for("receipt_edit", receipt_id=receipt_id))
+    
+    conn.close()
+    
+    return render_template("receipt_edit.html", receipt=receipt)
+
+
 @app.route("/student/<int:student_id>")
 @login_required
 def student_profile(student_id):

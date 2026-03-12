@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Edit Receipt</h2>
+
+<div class="card">
+  <form method="POST" action="{{ url_for('receipt_edit', receipt_id=receipt.id) }}">
+    <div class="form-group">
+      <label>Receipt No:</label>
+      <input type="text" value="{{ receipt.receipt_no }}" disabled class="form-control">
+    </div>
+
+    <div class="form-group">
+      <label>Invoice No:</label>
+      <input type="text" value="{{ receipt.invoice_no }}" disabled class="form-control">
+    </div>
+
+    <div class="form-group">
+      <label>Student:</label>
+      <input type="text" value="{{ receipt.full_name }}" disabled class="form-control">
+    </div>
+
+    <div class="form-group">
+      <label for="receipt_date">Receipt Date: <span style="color: red;">*</span></label>
+      <input type="date" id="receipt_date" name="receipt_date" class="form-control" value="{{ receipt.receipt_date }}" required>
+    </div>
+
+    <div class="form-group">
+      <label for="amount_received">Amount Received: <span style="color: red;">*</span></label>
+      <input type="number" id="amount_received" name="amount_received" step="0.01" min="0.01" class="form-control" value="{{ "%.2f"|format(receipt.amount_received or 0) }}" required>
+    </div>
+
+    <div class="form-group">
+      <label for="payment_mode">Payment Mode: <span style="color: red;">*</span></label>
+      <select id="payment_mode" name="payment_mode" class="form-control" required>
+        <option value="cash" {% if receipt.payment_mode == 'cash' %}selected{% endif %}>Cash</option>
+        <option value="upi" {% if receipt.payment_mode == 'upi' %}selected{% endif %}>UPI</option>
+        <option value="bank_transfer" {% if receipt.payment_mode == 'bank_transfer' %}selected{% endif %}>Bank Transfer</option>
+        <option value="card" {% if receipt.payment_mode == 'card' %}selected{% endif %}>Card</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="notes">Notes (UTR/Transaction No): <span style="color: gray;">(Optional)</span></label>
+      <input type="text" id="notes" name="notes" class="form-control" placeholder="e.g., UTR number, transaction ID, or reference number" value="{{ receipt.notes or '' }}">
+    </div>
+
+    <div class="form-group">
+      <button type="submit" class="btn btn-primary">Update Receipt</button>
+      <a href="{{ url_for('receipts') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<style>
+  .form-control {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+
+  .form-control:disabled {
+    background-color: #f9f9f9;
+    color: #666;
+    cursor: not-allowed;
+  }
+
+  .form-group {
+    margin-bottom: 20px;
+  }
+
+  .form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+    color: #333;
+  }
+
+  .btn {
+    padding: 10px 20px;
+    margin-right: 10px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    text-decoration: none;
+    display: inline-block;
+  }
+
+  .btn-primary {
+    background-color: #1e3a8a;
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background-color: #1e40af;
+  }
+
+  .btn-secondary {
+    background-color: #6b7280;
+    color: white;
+  }
+
+  .btn-secondary:hover {
+    background-color: #4b5563;
+  }
+</style>
+{% endblock %}
