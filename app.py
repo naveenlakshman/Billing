@@ -214,7 +214,7 @@ def login():
                 description=f"User {user['username']} logged in"
             )
 
-            flash("Login successful.", "success")
+            flash("Login successful Welcome!", "success")
             return redirect(url_for("dashboard"))
         else:
             flash("Invalid username or password.", "danger")
