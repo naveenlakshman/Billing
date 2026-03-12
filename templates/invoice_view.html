@@ -105,7 +105,7 @@
 
     {% for p in payments %}
     <tr>
-      <td>{{ p.receipt_no }}</td>
+      <td><a href="{{ url_for('receipt_view', receipt_id=p.id) }}" style="color: #0066cc; text-decoration: underline; cursor: pointer;">{{ p.receipt_no }}</a></td>
       <td>{{ p.receipt_date }}</td>
       <td>₹ {{ "%.2f"|format(p.amount_received or 0) }}</td>
       <td>{{ p.created_by_name }}</td>
