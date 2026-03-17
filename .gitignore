@@ -85,3 +85,57 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Flask
+instance/
+.webassets-cache
+
+# Uploads and user data
+uploads/
+data/
+temp/
+tmp/
+
+# Session files
+flask_session/
+sessions/
+
+# Production files
+*.pid
+*.sock
+
+# macOS
+.AppleDouble
+.LSOverride
+
+# Windows
+*.lnk
+$RECYCLE.BIN/
+
+# Compiled files (explicit)
+*.pyc
+*.pyo
+*.pyd
+*.so.a
+
+# Distribution / packaging
+.Python
+private/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
