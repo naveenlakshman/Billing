@@ -53,8 +53,7 @@
       <th>Student</th>
       <th>Phone</th>
       <th>Invoice No</th>
-      <th>Installment #</th>
-      <th>Amount Due</th>
+      <th>Remarks</th>
       <th>Balance Due</th>
     </tr>
 
@@ -68,14 +67,13 @@
           {{ item.invoice_no }}
         </a>
       </td>
-      <td>{{ item.installment_no }}</td>
-      <td>₹ {{ "%.2f"|format(item.amount_due) }}</td>
+      <td>{{ item.remarks or '-' }}</td>
       <td style="color: #c0392b; font-weight: bold;">₹ {{ "%.2f"|format(item.balance_due) }}</td>
     </tr>
     {% endfor %}
 
     <tr style="background-color: #f8f9fa; font-weight: bold;">
-      <td colspan="6" style="text-align: right;">Total Past Due:</td>
+      <td colspan="5" style="text-align: right;">Total Past Due:</td>
       <td style="color: #c0392b;">₹ {{ "%.2f"|format(total_past_due) }}</td>
     </tr>
   </table>
@@ -95,8 +93,7 @@
       <th>Student</th>
       <th>Phone</th>
       <th>Invoice No</th>
-      <th>Installment #</th>
-      <th>Amount Due</th>
+      <th>Remarks</th>
       <th>Balance Due</th>
     </tr>
 
@@ -110,14 +107,13 @@
           {{ item.invoice_no }}
         </a>
       </td>
-      <td>{{ item.installment_no }}</td>
-      <td>₹ {{ "%.2f"|format(item.amount_due) }}</td>
+      <td>{{ item.remarks or '-' }}</td>
       <td style="color: #e67e22; font-weight: bold;">₹ {{ "%.2f"|format(item.balance_due) }}</td>
     </tr>
     {% endfor %}
 
     <tr style="background-color: #f8f9fa; font-weight: bold;">
-      <td colspan="6" style="text-align: right;">Total Due Today:</td>
+      <td colspan="5" style="text-align: right;">Total Due Today:</td>
       <td style="color: #e67e22;">₹ {{ "%.2f"|format(total_today_due) }}</td>
     </tr>
   </table>
@@ -137,8 +133,7 @@
       <th>Student</th>
       <th>Phone</th>
       <th>Invoice No</th>
-      <th>Installment #</th>
-      <th>Amount Due</th>
+      <th>Remarks</th>
       <th>Balance Due</th>
     </tr>
 
@@ -152,14 +147,13 @@
           {{ item.invoice_no }}
         </a>
       </td>
-      <td>{{ item.installment_no }}</td>
-      <td>₹ {{ "%.2f"|format(item.amount_due) }}</td>
+      <td>{{ item.remarks or '-' }}</td>
       <td style="color: #3498db; font-weight: bold;">₹ {{ "%.2f"|format(item.balance_due) }}</td>
     </tr>
     {% endfor %}
 
     <tr style="background-color: #f8f9fa; font-weight: bold;">
-      <td colspan="6" style="text-align: right;">Total Upcoming:</td>
+      <td colspan="5" style="text-align: right;">Total Upcoming:</td>
       <td style="color: #3498db;">₹ {{ "%.2f"|format(total_upcoming_due) }}</td>
     </tr>
   </table>

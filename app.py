@@ -1131,11 +1131,11 @@ def receivables():
     past_dues_query = """
         SELECT
             ip.id,
-            ip.installment_no,
             ip.due_date,
             ip.amount_due,
             ip.amount_paid,
             ip.status,
+            ip.remarks,
             i.invoice_no,
             i.id AS invoice_id,
             i.branch_id,
@@ -1166,11 +1166,11 @@ def receivables():
     todays_dues_query = """
         SELECT
             ip.id,
-            ip.installment_no,
             ip.due_date,
             ip.amount_due,
             ip.amount_paid,
             ip.status,
+            ip.remarks,
             i.invoice_no,
             i.id AS invoice_id,
             i.branch_id,
@@ -1201,11 +1201,11 @@ def receivables():
     upcoming_dues_query = """
         SELECT
             ip.id,
-            ip.installment_no,
             ip.due_date,
             ip.amount_due,
             ip.amount_paid,
             ip.status,
+            ip.remarks,
             i.invoice_no,
             i.id AS invoice_id,
             i.branch_id,
