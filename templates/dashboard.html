@@ -169,15 +169,24 @@ new Chart(ctx, {
         datasets: [
             {
                 label: 'Sales',
-                data: {{ sales_data|tojson }}
+                data: {{ sales_data|tojson }},
+                backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
             },
             {
                 label: 'Receipts',
-                data: {{ receipts_data|tojson }}
+                data: {{ receipts_data|tojson }},
+                backgroundColor: 'rgba(75, 192, 75, 0.7)',
+                borderColor: 'rgba(75, 192, 75, 1)',
+                borderWidth: 1
             },
             {
                 label: 'Expenses',
-                data: {{ expenses_data|tojson }}
+                data: {{ expenses_data|tojson }},
+                backgroundColor: 'rgba(255, 99, 99, 0.7)',
+                borderColor: 'rgba(255, 99, 99, 1)',
+                borderWidth: 1
             }
         ]
     },
@@ -186,12 +195,49 @@ new Chart(ctx, {
         maintainAspectRatio: false,
         plugins: {
             legend: {
-                position: 'top'
+                position: 'top',
+                labels: {
+                    usePointStyle: true,
+                    padding: 15
+                }
+            },
+            tooltip: {
+                enabled: true,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                titleColor: '#fff',
+                bodyColor: '#fff',
+                borderColor: '#ddd',
+                borderWidth: 1,
+                padding: 12,
+                displayColors: true,
+                callbacks: {
+                    label: function(context) {
+                        let label = context.dataset.label || '';
+                        if (label) {
+                            label += ': ';
+                        }
+                        if (context.parsed.y !== null) {
+                            label += '₹ ' + context.parsed.y.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        }
+                        return label;
+                    }
+                }
             }
         },
         scales: {
             y: {
-                beginAtZero: true
+                beginAtZero: true,
+                ticks: {
+                    callback: function(value) {
+                        return '₹ ' + value.toLocaleString('en-IN');
+                    }
+                }
+            },
+            x: {
+                ticks: {
+                    maxRotation: 45,
+                    minRotation: 0
+                }
             }
         }
     }
