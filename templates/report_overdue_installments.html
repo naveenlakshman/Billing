@@ -134,7 +134,7 @@
       <td>{{ row.status }}</td>
 
       <td>
-        <a href="{{ url_for('payment_new', invoice_id=row.invoice_id) }}">Record Payment</a>
+        <a href="{{ url_for('receipt_new', invoice_id=row.invoice_id) }}">Record Payment</a>
       </td>
     </tr>
     {% else %}

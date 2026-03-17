@@ -281,24 +281,36 @@ def init_db():
     # Add notes column if it doesn't exist
     add_column_if_not_exists(cur, "receipts", "notes", "TEXT")
     
-    # Migrate old RCP format receipts to GIT/P/ format
+    # Migrate old RCP format and GIT/P/ format receipts to new GIT/{id} format
     try:
-        cur.execute("SELECT id, receipt_no FROM receipts WHERE receipt_no LIKE 'RCP%' ORDER BY id ASC")
+        # Find any receipts that don't match the new GIT/{id} format
+        cur.execute("""
+            SELECT id, receipt_no FROM receipts 
+            WHERE receipt_no NOT LIKE 'GIT/%' OR receipt_no NOT LIKE 'GIT/[0-9]*'
+            ORDER BY id ASC
+        """)
         old_receipts = cur.fetchall()
         
-        if old_receipts:
-            # Get the year to use for new receipt numbers
-            year = datetime.now().strftime("%y")
-            
-            for idx, receipt in enumerate(old_receipts, 1):
-                new_receipt_no = f"GIT/P/{year}/{idx}"
+        # Also handle GIT/P/ format already in database
+        cur.execute("""
+            SELECT id, receipt_no FROM receipts 
+            WHERE receipt_no LIKE 'GIT/P/%' OR receipt_no LIKE 'RCP%'
+            ORDER BY id ASC
+        """)
+        old_receipts_2 = cur.fetchall()
+        all_old_receipts = list(old_receipts) + list(old_receipts_2)
+        
+        if all_old_receipts:
+            for receipt in all_old_receipts:
+                receipt_id = receipt['id']
+                new_receipt_no = f"GIT/{receipt_id}"
                 cur.execute("""
                     UPDATE receipts
                     SET receipt_no = ?
                     WHERE id = ?
-                """, (new_receipt_no, receipt['id']))
+                """, (new_receipt_no, receipt_id))
     except:
-        pass  # Migration might fail if no old receipts, that's okay
+        pass  # Migration might fail, that's okay
     
     # Standardize receipt dates to YYYY-MM-DD format
     try:

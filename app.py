@@ -9,6 +9,7 @@ from werkzeug.security import generate_password_hash
 import json
 import csv
 import io
+import uuid
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -2168,9 +2169,9 @@ def installment_edit(installment_id):
     return redirect(url_for("invoice_view", invoice_id=invoice_id))
 
 
-@app.route("/payment/new", methods=["GET", "POST"])
+@app.route("/receipt/new", methods=["GET", "POST"])
 @login_required
-def payment_new():
+def receipt_new():
     invoice_id = request.args.get("invoice_id", type=int)
 
     if request.method == "POST":
@@ -2187,7 +2188,7 @@ def payment_new():
             if amount_received <= 0:
                 flash("Amount must be greater than 0", "danger")
                 conn.close()
-                return redirect(url_for("payment_new", invoice_id=invoice_id))
+                return redirect(url_for("receipt_new", invoice_id=invoice_id))
 
             # Get invoice details to validate against balance
             cur.execute("SELECT total_amount FROM invoices WHERE id = ?", (invoice_id,))
@@ -2211,14 +2212,15 @@ def payment_new():
             if amount_received > balance_amount:
                 flash(f"Amount cannot exceed balance amount of ₹{balance_amount:.2f}. Please enter an amount <= ₹{balance_amount:.2f}", "danger")
                 conn.close()
-                return redirect(url_for("payment_new", invoice_id=invoice_id))
-
-            # Generate receipt number with GIT/P/ format
-            receipt_no = generate_receipt_number(cur)
+                return redirect(url_for("receipt_new", invoice_id=invoice_id))
 
             payment_mode = request.form.get("payment_mode", "cash")
             notes = request.form.get("notes", "").strip()
 
+            # Generate a temporary unique receipt_no using UUID
+            temp_receipt_no = f"TEMP_{uuid.uuid4().hex[:8]}"
+
+            # Insert receipt with temporary receipt_no, will be updated with ID
             cur.execute("""
                 INSERT INTO receipts (
                     receipt_no,
@@ -2232,7 +2234,7 @@ def payment_new():
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                receipt_no,
+                temp_receipt_no,
                 invoice_id,
                 request.form.get("receipt_date"),
                 amount_received,
@@ -2241,6 +2243,15 @@ def payment_new():
                 session.get("user_id"),
                 now
             ))
+            
+            # Get the receipt ID and update receipt_no with GIT/{id} format
+            receipt_id = cur.lastrowid
+            receipt_no = f"GIT/{receipt_id}"
+            cur.execute("""
+                UPDATE receipts
+                SET receipt_no = ?
+                WHERE id = ?
+            """, (receipt_no, receipt_id))
 
             # Update invoice status based on total receipts
             cur.execute("SELECT total_amount FROM invoices WHERE id = ?", (invoice_id,))
@@ -2346,7 +2357,7 @@ def payment_new():
     conn.close()
 
     return render_template(
-        "payment_new.html",
+        "receipt_new.html",
         invoice=invoice,
         total_paid=total_paid,
         balance_amount=balance_amount
