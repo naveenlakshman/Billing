@@ -55,6 +55,7 @@
       <th>Invoice No</th>
       <th>Remarks</th>
       <th>Balance Due</th>
+      <th>Action</th>
     </tr>
 
     {% for item in past_dues %}
@@ -69,11 +70,14 @@
       </td>
       <td>{{ item.remarks or '-' }}</td>
       <td style="color: #c0392b; font-weight: bold;">₹ {{ "%.2f"|format(item.balance_due) }}</td>
+      <td>
+        <a href="{{ url_for('receipt_new', invoice_id=item.invoice_id) }}" class="btn btn-sm btn-primary" style="padding: 6px 12px; font-size: 12px;">Record Payment</a>
+      </td>
     </tr>
     {% endfor %}
 
     <tr style="background-color: #f8f9fa; font-weight: bold;">
-      <td colspan="5" style="text-align: right;">Total Past Due:</td>
+      <td colspan="6" style="text-align: right;">Total Past Due:</td>
       <td style="color: #c0392b;">₹ {{ "%.2f"|format(total_past_due) }}</td>
     </tr>
   </table>
@@ -95,6 +99,7 @@
       <th>Invoice No</th>
       <th>Remarks</th>
       <th>Balance Due</th>
+      <th>Action</th>
     </tr>
 
     {% for item in todays_dues %}
@@ -109,11 +114,14 @@
       </td>
       <td>{{ item.remarks or '-' }}</td>
       <td style="color: #e67e22; font-weight: bold;">₹ {{ "%.2f"|format(item.balance_due) }}</td>
+      <td>
+        <a href="{{ url_for('receipt_new', invoice_id=item.invoice_id) }}" class="btn btn-sm btn-primary" style="padding: 6px 12px; font-size: 12px;">Record Payment</a>
+      </td>
     </tr>
     {% endfor %}
 
     <tr style="background-color: #f8f9fa; font-weight: bold;">
-      <td colspan="5" style="text-align: right;">Total Due Today:</td>
+      <td colspan="6" style="text-align: right;">Total Due Today:</td>
       <td style="color: #e67e22;">₹ {{ "%.2f"|format(total_today_due) }}</td>
     </tr>
   </table>
@@ -135,6 +143,7 @@
       <th>Invoice No</th>
       <th>Remarks</th>
       <th>Balance Due</th>
+      <th>Action</th>
     </tr>
 
     {% for item in upcoming_dues %}
@@ -149,11 +158,14 @@
       </td>
       <td>{{ item.remarks or '-' }}</td>
       <td style="color: #3498db; font-weight: bold;">₹ {{ "%.2f"|format(item.balance_due) }}</td>
+      <td>
+        <a href="{{ url_for('receipt_new', invoice_id=item.invoice_id) }}" class="btn btn-sm btn-primary" style="padding: 6px 12px; font-size: 12px;">Record Payment</a>
+      </td>
     </tr>
     {% endfor %}
 
     <tr style="background-color: #f8f9fa; font-weight: bold;">
-      <td colspan="5" style="text-align: right;">Total Upcoming:</td>
+      <td colspan="6" style="text-align: right;">Total Upcoming:</td>
       <td style="color: #3498db;">₹ {{ "%.2f"|format(total_upcoming_due) }}</td>
     </tr>
   </table>
