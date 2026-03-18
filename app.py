@@ -1757,7 +1757,7 @@ def invoice_edit(invoice_id):
             # Get form data
             student_id_form = int(request.form.get("student_id", 0))
             invoice_date = request.form["invoice_date"]
-            installment_type = invoice["installment_type"]
+            installment_type = request.form.get("installment_type", "").strip()
             notes = request.form.get("notes", "").strip()
 
             # Validate student exists
@@ -1865,6 +1865,7 @@ def invoice_edit(invoice_id):
                     subtotal = ?,
                     discount_amount = ?,
                     total_amount = ?,
+                    installment_type = ?,
                     notes = ?,
                     updated_at = ?
                 WHERE id = ?
@@ -1874,6 +1875,7 @@ def invoice_edit(invoice_id):
                 subtotal,
                 discount_amount,
                 total_amount,
+                installment_type,
                 notes,
                 now,
                 invoice_id
