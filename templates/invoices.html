@@ -5,6 +5,13 @@
 
 <div class="page-actions">
   <a class="btn btn-primary" href="{{ url_for('invoice_new') }}">Create Invoice</a>
+  {% if session.get('role') == 'admin' %}
+  <form method="post" action="{{ url_for('fix_installment_payments') }}" style="display: inline;">
+    <button type="submit" class="btn btn-warning" title="Fix payment allocation for invoices with custom installments">
+      🔧 Fix Installment Payments
+    </button>
+  </form>
+  {% endif %}
 </div>
 
 <div class="card">

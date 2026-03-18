@@ -2010,6 +2010,50 @@ def invoice_edit(invoice_id):
                     flash("Installment total must equal invoice total amount.", "danger")
                     return redirect(url_for("invoice_edit", invoice_id=invoice_id))
 
+                # Reallocate existing payments to new installment plan
+                cur.execute("""
+                    SELECT IFNULL(SUM(amount_received), 0) AS total_received
+                    FROM receipts
+                    WHERE invoice_id = ?
+                """, (invoice_id,))
+                total_received = cur.fetchone()["total_received"] or 0
+
+                if total_received > 0:
+                    cur.execute("""
+                        SELECT id, installment_no, amount_due
+                        FROM installment_plans
+                        WHERE invoice_id = ?
+                        ORDER BY installment_no ASC
+                    """, (invoice_id,))
+                    installments = cur.fetchall()
+
+                    remaining_payment = total_received
+
+                    for installment in installments:
+                        inst_id = installment["id"]
+                        inst_amount_due = installment["amount_due"]
+
+                        if remaining_payment <= 0:
+                            cur.execute("""
+                                UPDATE installment_plans
+                                SET amount_paid = ?, status = 'pending', updated_at = ?
+                                WHERE id = ?
+                            """, (0, now, inst_id))
+                        elif remaining_payment >= inst_amount_due:
+                            cur.execute("""
+                                UPDATE installment_plans
+                                SET amount_paid = ?, status = 'paid', remarks = 'Fully paid', updated_at = ?
+                                WHERE id = ?
+                            """, (inst_amount_due, now, inst_id))
+                            remaining_payment -= inst_amount_due
+                        else:
+                            cur.execute("""
+                                UPDATE installment_plans
+                                SET amount_paid = ?, status = 'partially_paid', remarks = ?, updated_at = ?
+                                WHERE id = ?
+                            """, (remaining_payment, f"Partial payment of {remaining_payment}", now, inst_id))
+                            remaining_payment = 0
+
             conn.commit()
             conn.close()
 
@@ -5199,6 +5243,89 @@ def import_installments_page():
         "import_installments.html",
         import_results=import_results
     )
+
+
+@app.route("/admin/fix-installment-payments", methods=["POST"])
+@admin_required
+def fix_installment_payments():
+    """
+    Admin helper endpoint to reallocate payments across installments for all invoices.
+    This fixes invoices where payment status didn't match the actual amounts paid.
+    """
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        now = datetime.now().isoformat(timespec="seconds")
+        fixed_count = 0
+
+        # Get all invoices with custom installments
+        cur.execute("""
+            SELECT id
+            FROM invoices
+            WHERE installment_type = 'custom'
+            ORDER BY id ASC
+        """)
+        invoices = cur.fetchall()
+
+        for invoice in invoices:
+            invoice_id = invoice["id"]
+
+            # Get total amount paid for this invoice
+            cur.execute("""
+                SELECT IFNULL(SUM(amount_received), 0) AS total_received
+                FROM receipts
+                WHERE invoice_id = ?
+            """, (invoice_id,))
+            total_received = cur.fetchone()["total_received"] or 0
+
+            if total_received > 0:
+                # Get all installments for this invoice
+                cur.execute("""
+                    SELECT id, installment_no, amount_due
+                    FROM installment_plans
+                    WHERE invoice_id = ?
+                    ORDER BY installment_no ASC
+                """, (invoice_id,))
+                installments = cur.fetchall()
+
+                remaining_payment = total_received
+
+                for installment in installments:
+                    inst_id = installment["id"]
+                    inst_amount_due = installment["amount_due"]
+
+                    if remaining_payment <= 0:
+                        cur.execute("""
+                            UPDATE installment_plans
+                            SET amount_paid = ?, status = 'pending', updated_at = ?
+                            WHERE id = ?
+                        """, (0, now, inst_id))
+                    elif remaining_payment >= inst_amount_due:
+                        cur.execute("""
+                            UPDATE installment_plans
+                            SET amount_paid = ?, status = 'paid', remarks = 'Fully paid', updated_at = ?
+                            WHERE id = ?
+                        """, (inst_amount_due, now, inst_id))
+                        remaining_payment -= inst_amount_due
+                    else:
+                        cur.execute("""
+                            UPDATE installment_plans
+                            SET amount_paid = ?, status = 'partially_paid', remarks = ?, updated_at = ?
+                            WHERE id = ?
+                        """, (remaining_payment, f"Partial payment of {remaining_payment}", now, inst_id))
+                        remaining_payment = 0
+
+                fixed_count += 1
+
+        conn.commit()
+        conn.close()
+
+        flash(f"Successfully reallocated payments for {fixed_count} invoices.", "success")
+        return redirect(request.referrer or url_for("invoices"))
+
+    except Exception as e:
+        flash(f"Error fixing installment payments: {str(e)}", "danger")
+        return redirect(request.referrer or url_for("invoices"))
 
 
 if __name__ == "__main__":
