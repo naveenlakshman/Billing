@@ -513,6 +513,7 @@ body {
 .dashboard-chart-left canvas {
     width: 100% !important;
     height: 360px !important;
+    cursor: pointer;
 }
 
 .dashboard-chart-right {

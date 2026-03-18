@@ -126,6 +126,25 @@
     <div class="dashboard-chart-left">
       <h3>Sales, Receipts and Expenses</h3>
       <canvas id="dashboardChart"></canvas>
+      <div id="clickInfo" style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-radius: 6px; display: none;">
+        <div style="font-size: 14px; color: #666; margin-bottom: 12px;">
+          <strong>Month:</strong> <span id="clickMonth"></span>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+          <div>
+            <div style="font-size: 12px; color: #2196F3; font-weight: bold; margin-bottom: 4px;">Sales</div>
+            <div id="clickSales" style="font-size: 16px; font-weight: bold; color: #333;"></div>
+          </div>
+          <div>
+            <div style="font-size: 12px; color: #4CAF50; font-weight: bold; margin-bottom: 4px;">Receipts</div>
+            <div id="clickReceipts" style="font-size: 16px; font-weight: bold; color: #333;"></div>
+          </div>
+          <div>
+            <div style="font-size: 12px; color: #F44336; font-weight: bold; margin-bottom: 4px;">Expenses</div>
+            <div id="clickExpenses" style="font-size: 16px; font-weight: bold; color: #333;"></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="dashboard-chart-right">
@@ -161,29 +180,36 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 const ctx = document.getElementById('dashboardChart');
+const monthLabels = {{ month_labels|tojson }};
+const salesData = {{ sales_data|tojson }};
+const receiptsData = {{ receipts_data|tojson }};
+const expensesData = {{ expenses_data|tojson }};
 
-new Chart(ctx, {
+let chartInstance;
+
+// Create chart
+chartInstance = new Chart(ctx, {
     type: 'bar',
     data: {
-        labels: {{ month_labels|tojson }},
+        labels: monthLabels,
         datasets: [
             {
                 label: 'Sales',
-                data: {{ sales_data|tojson }},
+                data: salesData,
                 backgroundColor: 'rgba(54, 162, 235, 0.7)',
                 borderColor: 'rgba(54, 162, 235, 1)',
                 borderWidth: 1
             },
             {
                 label: 'Receipts',
-                data: {{ receipts_data|tojson }},
+                data: receiptsData,
                 backgroundColor: 'rgba(75, 192, 75, 0.7)',
                 borderColor: 'rgba(75, 192, 75, 1)',
                 borderWidth: 1
             },
             {
                 label: 'Expenses',
-                data: {{ expenses_data|tojson }},
+                data: expensesData,
                 backgroundColor: 'rgba(255, 99, 99, 0.7)',
                 borderColor: 'rgba(255, 99, 99, 1)',
                 borderWidth: 1
@@ -202,26 +228,7 @@ new Chart(ctx, {
                 }
             },
             tooltip: {
-                enabled: true,
-                backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                titleColor: '#fff',
-                bodyColor: '#fff',
-                borderColor: '#ddd',
-                borderWidth: 1,
-                padding: 12,
-                displayColors: true,
-                callbacks: {
-                    label: function(context) {
-                        let label = context.dataset.label || '';
-                        if (label) {
-                            label += ': ';
-                        }
-                        if (context.parsed.y !== null) {
-                            label += '₹ ' + context.parsed.y.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                        }
-                        return label;
-                    }
-                }
+                enabled: false
             }
         },
         scales: {
@@ -240,6 +247,56 @@ new Chart(ctx, {
                 }
             }
         }
+    }
+});
+
+// Handle click on canvas - Alternative approach using scale position
+document.getElementById('dashboardChart').addEventListener('click', function(evt) {
+    try {
+        // Get canvas position relative to the chart
+        const canvasPosition = Chart.helpers.getRelativePosition(evt, chartInstance);
+        
+        // Get scale values
+        const xScale = chartInstance.scales.x;
+        const yScale = chartInstance.scales.y;
+        
+        // Calculate the data index based on pixel position
+        const dataIndex = Math.round((canvasPosition.x - xScale.left) / ((xScale.right - xScale.left) / monthLabels.length));
+        
+        // Get elements at click position as backup
+        const elements = chartInstance.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
+        
+        let finalDataIndex = dataIndex;
+        
+        if (elements && elements.length > 0) {
+            finalDataIndex = elements[0].index;
+        }
+        
+        console.log('Click Position - DataIndex:', finalDataIndex);
+        console.log('Total Months:', monthLabels.length);
+        
+        // Validate index
+        if (finalDataIndex >= 0 && finalDataIndex < monthLabels.length) {
+            const month = monthLabels[finalDataIndex];
+            
+            // Get all three values for this month
+            const salesValue = salesData[finalDataIndex];
+            const receiptsValue = receiptsData[finalDataIndex];
+            const expensesValue = expensesData[finalDataIndex];
+            
+            console.log('Selected Month:', month, 'Sales:', salesValue, 'Receipts:', receiptsValue, 'Expenses:', expensesValue);
+            
+            // Update the info display with all three values
+            document.getElementById('clickMonth').textContent = month;
+            document.getElementById('clickSales').innerHTML = `₹ ${salesValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            document.getElementById('clickReceipts').innerHTML = `₹ ${receiptsValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            document.getElementById('clickExpenses').innerHTML = `₹ ${expensesValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            document.getElementById('clickInfo').style.display = 'block';
+        } else {
+            console.log('Index out of range - DataIndex:', finalDataIndex);
+        }
+    } catch(e) {
+        console.error('Error handling chart click:', e);
     }
 });
 </script>
