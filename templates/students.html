@@ -187,6 +187,33 @@
   </a>
 </div>
 
+<!-- Mini Dashboard Section -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px;">
+  <!-- Total Active Card -->
+  <div style="background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+    <div style="font-size: 13px; text-transform: uppercase; font-weight: 600; opacity: 0.9; margin-bottom: 8px;">Active Students</div>
+    <div style="font-size: 32px; font-weight: bold;">{{ stats.active_count or 0 }}</div>
+  </div>
+
+  <!-- Total Completed Card -->
+  <div style="background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%); color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+    <div style="font-size: 13px; text-transform: uppercase; font-weight: 600; opacity: 0.9; margin-bottom: 8px;">Completed Students</div>
+    <div style="font-size: 32px; font-weight: bold;">{{ stats.completed_count or 0 }}</div>
+  </div>
+
+  <!-- Total Dropped Card -->
+  <div style="background: linear-gradient(135deg, #F44336 0%, #D32F2F 100%); color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+    <div style="font-size: 13px; text-transform: uppercase; font-weight: 600; opacity: 0.9; margin-bottom: 8px;">Dropped Students</div>
+    <div style="font-size: 32px; font-weight: bold;">{{ stats.dropped_count or 0 }}</div>
+  </div>
+
+  <!-- Total Students Card -->
+  <div style="background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%); color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+    <div style="font-size: 13px; text-transform: uppercase; font-weight: 600; opacity: 0.9; margin-bottom: 8px;">Total Students</div>
+    <div style="font-size: 32px; font-weight: bold;">{{ stats.total_count or 0 }}</div>
+  </div>
+</div>
+
 <!-- Search and Filter Section -->
 <div class="search-filter-section">
   <form method="get">

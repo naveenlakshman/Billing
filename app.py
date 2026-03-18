@@ -667,6 +667,17 @@ def students():
     branch_filter = request.args.get("branch", "").strip()
     status_filter = request.args.get("status", "").strip()
 
+    # Get student statistics
+    cur.execute("""
+        SELECT 
+            SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_count,
+            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_count,
+            SUM(CASE WHEN status = 'dropped' THEN 1 ELSE 0 END) as dropped_count,
+            COUNT(*) as total_count
+        FROM students
+    """)
+    stats = cur.fetchone()
+
     # Build the base query
     query = """
         SELECT
@@ -722,7 +733,8 @@ def students():
         branches=branches,
         search_query=search_query,
         branch_filter=branch_filter,
-        status_filter=status_filter
+        status_filter=status_filter,
+        stats=stats
     )
 
 
