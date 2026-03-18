@@ -738,6 +738,98 @@ def students():
     )
 
 
+@app.route("/students/export-csv")
+@admin_required
+def export_students_csv():
+    """Export all students to CSV file"""
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT
+                students.student_code,
+                students.full_name,
+                students.phone,
+                students.gender,
+                students.email,
+                students.address,
+                students.education_level,
+                students.qualification,
+                students.employment_status,
+                students.status,
+                branches.branch_name,
+                students.created_at
+            FROM students
+            LEFT JOIN branches
+                ON students.branch_id = branches.id
+            ORDER BY students.id DESC
+        """)
+        students_data = cur.fetchall()
+        conn.close()
+        
+        # Create CSV output
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        writer.writerow([
+            'Student Code',
+            'Full Name',
+            'Phone',
+            'Gender',
+            'Email',
+            'Address',
+            'Education Level',
+            'Qualification',
+            'Employment Status',
+            'Status',
+            'Branch',
+            'Created Date'
+        ])
+        
+        # Write data rows
+        for student in students_data:
+            writer.writerow([
+                student['student_code'],
+                student['full_name'],
+                student['phone'],
+                student['gender'],
+                student['email'],
+                student['address'],
+                student['education_level'],
+                student['qualification'],
+                student['employment_status'],
+                student['status'],
+                student['branch_name'],
+                student['created_at']
+            ])
+        
+        # Create response
+        output.seek(0)
+        response = app.response_class(
+            response=output.getvalue(),
+            status=200,
+            mimetype='text/csv',
+            headers={
+                'Content-Disposition': 'attachment; filename=students_export.csv'
+            }
+        )
+        
+        safe_log_activity(
+            user_id=session.get("user_id"),
+            action_type="export",
+            module_name="students",
+            description="Exported students data to CSV"
+        )
+        
+        return response
+        
+    except Exception as e:
+        flash(f"Error exporting students: {str(e)}", "danger")
+        return redirect(url_for("students"))
+
+
 @app.route("/api/qualifications/<education_level>")
 def get_qualifications(education_level):
     qualifications = QUALIFICATION_LEVELS.get(education_level, [])

@@ -182,9 +182,16 @@
 
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
   <h2 style="margin: 0; font-size: 28px;">Students</h2>
-  <a class="btn btn-primary" href="{{ url_for('student_new') }}" style="padding: 10px 18px; font-weight: 500; font-size: 14px;">
-    + Add Student
-  </a>
+  <div style="display: flex; gap: 10px;">
+    {% if session.get('role') == 'admin' %}
+    <a class="btn btn-warning" href="{{ url_for('export_students_csv') }}" title="Export all students to CSV" style="padding: 10px 18px; font-weight: 500; font-size: 14px; background-color: #FF9800; color: white;">
+      📥 Export CSV
+    </a>
+    {% endif %}
+    <a class="btn btn-primary" href="{{ url_for('student_new') }}" style="padding: 10px 18px; font-weight: 500; font-size: 14px;">
+      + Add Student
+    </a>
+  </div>
 </div>
 
 <!-- Mini Dashboard Section -->
