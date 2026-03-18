@@ -1164,6 +1164,44 @@ def invoices():
     conn = get_conn()
     cur = conn.cursor()
 
+    # Get today's date
+    today = datetime.now().date().isoformat()
+    
+    # Get invoice metrics for dashboard - TODAY only
+    cur.execute("""
+        SELECT 
+            COUNT(*) as total_invoices,
+            SUM(invoices.total_amount) as total_amount,
+            SUM(CASE WHEN invoices.status = 'paid' THEN 1 ELSE 0 END) as paid_count,
+            SUM(CASE WHEN invoices.status = 'partially_paid' THEN 1 ELSE 0 END) as partially_paid_count,
+            SUM(CASE WHEN invoices.status = 'unpaid' THEN 1 ELSE 0 END) as unpaid_count,
+            SUM(invoices.total_amount - IFNULL((
+                SELECT SUM(receipts.amount_received) 
+                FROM receipts 
+                WHERE receipts.invoice_id = invoices.id
+            ), 0)) as outstanding_amount
+        FROM invoices
+        WHERE DATE(invoices.created_at) = ?
+    """, (today,))
+    today_stats = cur.fetchone()
+
+    # Get overall invoice statistics
+    cur.execute("""
+        SELECT 
+            COUNT(*) as total_all_invoices,
+            SUM(invoices.total_amount) as total_all_amount,
+            SUM(CASE WHEN invoices.status = 'paid' THEN 1 ELSE 0 END) as all_paid_count,
+            SUM(CASE WHEN invoices.status = 'partially_paid' THEN 1 ELSE 0 END) as all_partially_paid_count,
+            SUM(CASE WHEN invoices.status = 'unpaid' THEN 1 ELSE 0 END) as all_unpaid_count,
+            SUM(invoices.total_amount - IFNULL((
+                SELECT SUM(receipts.amount_received) 
+                FROM receipts 
+                WHERE receipts.invoice_id = invoices.id
+            ), 0)) as all_outstanding_amount
+        FROM invoices
+    """)
+    overall_stats = cur.fetchone()
+
     query = """
     SELECT
         invoices.id,
@@ -1207,7 +1245,13 @@ def invoices():
 
     conn.close()
 
-    return render_template("invoices.html", invoices=invoices, search=search)
+    return render_template(
+        "invoices.html", 
+        invoices=invoices, 
+        search=search,
+        today_stats=today_stats,
+        overall_stats=overall_stats
+    )
 
 
 @app.route("/receivables")
