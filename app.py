@@ -10,6 +10,7 @@ import json
 import csv
 import io
 import uuid
+import zipfile
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -2845,13 +2846,6 @@ def student_profile(student_id):
         total_balance=total_balance
     )
 
-
-
-
-
-
-
-
 @app.route("/reports")
 @login_required
 def reports_center():
@@ -5474,6 +5468,84 @@ def fix_installment_payments():
     except Exception as e:
         flash(f"Error fixing installment payments: {str(e)}", "danger")
         return redirect(request.referrer or url_for("invoices"))
+
+
+@app.route("/export-all-data-csv")
+@admin_required
+def export_all_data_csv():
+    """Export all database tables to CSV files in a ZIP archive"""
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        
+        # Get all table names
+        cur.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name NOT LIKE 'sqlite_%'
+            ORDER BY name
+        """)
+        tables = [row[0] for row in cur.fetchall()]
+        
+        # Create a ZIP file in memory
+        zip_buffer = io.BytesIO()
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for table_name in tables:
+                try:
+                    # Get all data from table
+                    cur.execute(f"SELECT * FROM {table_name}")
+                    rows = cur.fetchall()
+                    
+                    # Get column names
+                    cur.execute(f"PRAGMA table_info({table_name})")
+                    columns = [col[1] for col in cur.fetchall()]
+                    
+                    if columns:
+                        # Create CSV content
+                        csv_buffer = io.StringIO()
+                        writer = csv.writer(csv_buffer)
+                        
+                        # Write header
+                        writer.writerow(columns)
+                        
+                        # Write data rows
+                        for row in rows:
+                            writer.writerow(row)
+                        
+                        # Add CSV file to ZIP
+                        csv_content = csv_buffer.getvalue()
+                        zip_file.writestr(f"{table_name}.csv", csv_content)
+                
+                except Exception as e:
+                    print(f"Error processing table {table_name}: {str(e)}")
+                    continue
+        
+        conn.close()
+        
+        # Prepare ZIP file for download
+        zip_buffer.seek(0)
+        response = app.response_class(
+            response=zip_buffer.getvalue(),
+            status=200,
+            mimetype='application/zip',
+            headers={
+                'Content-Disposition': f'attachment; filename=database_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.zip'
+            }
+        )
+        
+        # Log activity
+        safe_log_activity(
+            user_id=session.get("user_id"),
+            action_type="export",
+            module_name="all_tables",
+            description="Exported all database tables to CSV"
+        )
+        
+        return response
+        
+    except Exception as e:
+        flash(f"Error exporting all data: {str(e)}", "danger")
+        return redirect(url_for("reports_center"))
 
 
 if __name__ == "__main__":
