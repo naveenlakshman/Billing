@@ -11,6 +11,9 @@ import csv
 import io
 import uuid
 import zipfile
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
+from openpyxl.styles import Font
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -5473,7 +5476,7 @@ def fix_installment_payments():
 @app.route("/export-all-data-csv")
 @admin_required
 def export_all_data_csv():
-    """Export all database tables to CSV files in a ZIP archive"""
+    """Export all database tables to a single Excel workbook with different sheets"""
     try:
         conn = get_conn()
         cur = conn.cursor()
@@ -5486,50 +5489,67 @@ def export_all_data_csv():
         """)
         tables = [row[0] for row in cur.fetchall()]
         
-        # Create a ZIP file in memory
-        zip_buffer = io.BytesIO()
+        # Create a new workbook
+        workbook = Workbook()
+        workbook.remove(workbook.active)  # Remove default sheet
         
-        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            for table_name in tables:
-                try:
-                    # Get all data from table
-                    cur.execute(f"SELECT * FROM {table_name}")
-                    rows = cur.fetchall()
-                    
-                    # Get column names
-                    cur.execute(f"PRAGMA table_info({table_name})")
-                    columns = [col[1] for col in cur.fetchall()]
-                    
-                    if columns:
-                        # Create CSV content
-                        csv_buffer = io.StringIO()
-                        writer = csv.writer(csv_buffer)
-                        
-                        # Write header
-                        writer.writerow(columns)
-                        
-                        # Write data rows
-                        for row in rows:
-                            writer.writerow(row)
-                        
-                        # Add CSV file to ZIP
-                        csv_content = csv_buffer.getvalue()
-                        zip_file.writestr(f"{table_name}.csv", csv_content)
+        for table_name in tables:
+            try:
+                # Get all data from table
+                cur.execute(f"SELECT * FROM {table_name}")
+                rows = cur.fetchall()
                 
-                except Exception as e:
-                    print(f"Error processing table {table_name}: {str(e)}")
-                    continue
+                # Get column names
+                cur.execute(f"PRAGMA table_info({table_name})")
+                columns = [col[1] for col in cur.fetchall()]
+                
+                if columns:
+                    # Create a new sheet with table name
+                    # Excel sheet names have a 31 character limit
+                    sheet_name = table_name[:31]
+                    worksheet = workbook.create_sheet(title=sheet_name)
+                    
+                    # Write header row
+                    for col_idx, column_name in enumerate(columns, start=1):
+                        cell = worksheet.cell(row=1, column=col_idx)
+                        cell.value = column_name
+                        # Style header (bold)
+                        cell.font = Font(bold=True)
+                    
+                    # Write data rows
+                    for row_idx, row in enumerate(rows, start=2):
+                        for col_idx, value in enumerate(row, start=1):
+                            cell = worksheet.cell(row=row_idx, column=col_idx)
+                            cell.value = value
+                    
+                    # Auto-adjust column widths
+                    for col_idx, column_name in enumerate(columns, start=1):
+                        max_length = len(str(column_name))
+                        for row in worksheet.iter_rows(min_row=2, max_col=col_idx):
+                            if row[0].value:
+                                max_length = max(max_length, len(str(row[0].value)))
+                        
+                        adjusted_width = min(max_length + 2, 50)  # Cap at 50 characters
+                        worksheet.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
+            
+            except Exception as e:
+                print(f"Error processing table {table_name}: {str(e)}")
+                continue
         
         conn.close()
         
-        # Prepare ZIP file for download
-        zip_buffer.seek(0)
+        # Save workbook to bytes
+        excel_buffer = io.BytesIO()
+        workbook.save(excel_buffer)
+        excel_buffer.seek(0)
+        
+        # Prepare response
         response = app.response_class(
-            response=zip_buffer.getvalue(),
+            response=excel_buffer.getvalue(),
             status=200,
-            mimetype='application/zip',
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             headers={
-                'Content-Disposition': f'attachment; filename=database_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.zip'
+                'Content-Disposition': f'attachment; filename=database_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
             }
         )
         
@@ -5538,7 +5558,7 @@ def export_all_data_csv():
             user_id=session.get("user_id"),
             action_type="export",
             module_name="all_tables",
-            description="Exported all database tables to CSV"
+            description="Exported all database tables to Excel workbook"
         )
         
         return response
